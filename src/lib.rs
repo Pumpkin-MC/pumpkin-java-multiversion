@@ -8,9 +8,15 @@ use pumpkin_plugin_api::{
     Context, Plugin, PluginMetadata, Server,
     events::{
         EventHandler, EventPriority,
-        packet::{PacketReceivedEvent, PacketSentEvent},
+        packet::{
+            ConnectionPacketReceivedEvent, ConnectionPacketSentEvent, PacketReceivedEvent,
+            PacketSentEvent,
+        },
     },
-    events_wit::{PacketReceivedEventData, PacketSentEventData},
+    events_wit::{
+        ConnectionPacketReceivedEventData, ConnectionPacketSentEventData, PacketReceivedEventData,
+        PacketSentEventData,
+    },
     register_plugin,
 };
 
@@ -44,6 +50,14 @@ impl Plugin for MultiVersionPlugin {
         context.register_event_handler(PacketReceivedHandler, EventPriority::Highest, true)?;
 
         context.register_event_handler(PacketSentHandler, EventPriority::Lowest, true)?;
+
+        // Before play (status / login / config) there is no player, only the connection.
+        context.register_event_handler(
+            ConnectionPacketReceivedHandler,
+            EventPriority::Highest,
+            true,
+        )?;
+        context.register_event_handler(ConnectionPacketSentHandler, EventPriority::Lowest, true)?;
 
         tracing::info!("Pumpkin Java Multi-Version Plugin enabled! Supporting 1.7.2 - 26.3");
         Ok(())
@@ -94,6 +108,55 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
                 event.packet_id = new_id;
                 event.raw_payload = new_payload;
             }
+        }
+        event
+    }
+}
+
+/// Translates incoming pre-play packets from older clients to 26.3.
+struct ConnectionPacketReceivedHandler;
+
+impl EventHandler<ConnectionPacketReceivedEvent> for ConnectionPacketReceivedHandler {
+    fn handle(
+        &self,
+        _server: Server,
+        mut event: ConnectionPacketReceivedEventData,
+    ) -> ConnectionPacketReceivedEventData {
+        let version = from_wasm_java_version(event.version);
+        if let Some((new_id, new_payload)) = PacketTranslator::translate_connection_incoming(
+            event.state,
+            event.packet_id,
+            &event.raw_payload,
+            version,
+        ) {
+            event.packet_id = new_id;
+            event.raw_payload = new_payload;
+        }
+        event
+    }
+}
+
+/// Translates outgoing pre-play 26.3 packets to the client's id and payload.
+struct ConnectionPacketSentHandler;
+
+impl EventHandler<ConnectionPacketSentEvent> for ConnectionPacketSentHandler {
+    fn handle(
+        &self,
+        _server: Server,
+        mut event: ConnectionPacketSentEventData,
+    ) -> ConnectionPacketSentEventData {
+        let version = from_wasm_java_version(event.version);
+        match PacketTranslator::translate_connection_outgoing(
+            event.state,
+            event.packet_id,
+            &event.raw_payload,
+            version,
+        ) {
+            Some((client_id, payload)) => {
+                event.packet_id = client_id;
+                event.raw_payload = payload;
+            }
+            None => event.cancelled = true,
         }
         event
     }
