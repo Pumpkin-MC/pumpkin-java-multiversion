@@ -1,7 +1,9 @@
 //! Serverbound play packets from older clients to 26.3.
 
+use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
-    VarInt,
+    ClientPacket, ServerPacket, VarInt,
+    java::server::play::{ActionType, SInteract},
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},
 };
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -83,6 +85,49 @@ eras! {
         V1_7 = V_1_7_2,
         /// Var ints; same as 26.3.
         V1_21_2 = V_1_21_2,
+    }
+}
+
+eras! {
+    enum InteractFormat {
+        /// No interact-at; the plain interact is the only right click.
+        V1_7 = V_1_7_2,
+        /// Right clicks send interact-at, then interact.
+        V1_8 = V_1_8,
+        /// Attacks split into ATTACK; same as 26.3.
+        V26_1 = V_26_1,
+    }
+}
+
+/// INTERACT, as the 26.3 `(packet id, payload)`: attacks become ATTACK, interact-at the new
+/// INTERACT. `None` drops the plain interact that follows an interact-at.
+// TODO: spectators should send TELEPORT_TO_ENTITY instead of ATTACK
+pub fn interact_to_current(
+    mut payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<(i32, Vec<u8>)> {
+    let format = InteractFormat::of(version);
+    if format == InteractFormat::V26_1 {
+        return Some((play::INTERACT.current(), payload.to_vec()));
+    }
+    let interact = SInteract::read(&mut payload, &version).ok()?;
+    let action = ActionType::try_from(interact.r#type.0).ok()?;
+    let mut out = Vec::new();
+    match action {
+        ActionType::Attack => {
+            out.write_var_int(&interact.entity_id).ok()?;
+            Some((play::ATTACK.current(), out))
+        }
+        ActionType::Interact if format >= InteractFormat::V1_8 => None,
+        ActionType::Interact | ActionType::InteractAt => {
+            SInteract {
+                r#type: VarInt(ActionType::InteractAt as i32),
+                ..interact
+            }
+            .write_packet_data(&mut out, &CURRENT_MC_VERSION)
+            .ok()?;
+            Some((play::INTERACT.current(), out))
+        }
     }
 }
 
@@ -293,4 +338,40 @@ pub fn play_to_current(
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const V1_21_11: JavaMinecraftVersion = JavaMinecraftVersion::V_1_21_11;
+
+    #[test]
+    fn attack_becomes_attack_packet() {
+        // Entity 5, attack, not sneaking
+        let client = [5, 1, 0];
+        assert_eq!(
+            interact_to_current(&client, V1_21_11),
+            Some((play::ATTACK.current(), vec![5]))
+        );
+        // The plain interact after an interact-at is dropped
+        assert_eq!(interact_to_current(&[5, 0, 0, 0], V1_21_11), None);
+    }
+
+    #[test]
+    fn interact_at_becomes_interact() {
+        let mut client = vec![5, 2];
+        for value in [0.5f32, 1.0, -0.25] {
+            client.write_f32_be(value).unwrap();
+        }
+        client.extend_from_slice(&[1, 1]);
+        let (id, payload) = interact_to_current(&client, V1_21_11).unwrap();
+        assert_eq!(id, play::INTERACT.current());
+        let read = SInteract::read(&mut payload.as_slice(), &CURRENT_MC_VERSION).unwrap();
+        assert_eq!(read.entity_id, VarInt(5));
+        assert_eq!(read.hand, Some(VarInt(1)));
+        assert!(read.sneaking);
+        let target = read.target_position.unwrap();
+        assert!((target.x - 0.5).abs() < 0.01 && (target.z + 0.25).abs() < 0.01);
+    }
 }

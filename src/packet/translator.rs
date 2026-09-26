@@ -597,6 +597,9 @@ impl PacketTranslator {
         }
 
         let new_id = Self::translate_serverbound_packet_id(packet_id, version)?;
+        if new_id == mappings::serverbound::play::INTERACT.current() {
+            return serverbound::interact_to_current(raw_payload, version);
+        }
         let translated_payload = serverbound::play_to_current(new_id, raw_payload, version)
             .unwrap_or_else(|| raw_payload.to_vec());
         Some((new_id, translated_payload))
