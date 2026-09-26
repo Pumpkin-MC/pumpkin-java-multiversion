@@ -51,7 +51,12 @@ const fn options(particle: Particle) -> Option<Options> {
         P::SculkCharge => Options::Float,
         P::Shriek => Options::VarInt,
         // TODO: item, vibration, trail and geyser options
-        P::Item | P::Vibration | P::Trail | P::Geyser | P::GeyserBase | P::GeyserPoof
+        P::Item
+        | P::Vibration
+        | P::Trail
+        | P::Geyser
+        | P::GeyserBase
+        | P::GeyserPoof
         | P::GeyserPlume => return None,
         _ => Options::None,
     })
@@ -60,7 +65,8 @@ const fn options(particle: Particle) -> Option<Options> {
 /// Packed RGB as the three floats of older dust particles.
 fn write_rgb_floats(color: i32, out: &mut Vec<u8>) -> Option<()> {
     for shift in [16, 8, 0] {
-        out.write_f32_be(((color >> shift) & 0xFF) as f32 / 255.0).ok()?;
+        out.write_f32_be(((color >> shift) & 0xFF) as f32 / 255.0)
+            .ok()?;
     }
     Some(())
 }
@@ -153,8 +159,14 @@ mod tests {
         current.write_f32_be(2.0).unwrap();
 
         let mut out = Vec::new();
-        write_particle(&mut current.as_slice(), JavaMinecraftVersion::V_1_21, &mut out).unwrap();
-        let id = remap_particle_id_for_version(Particle::Dust.to_id(), JavaMinecraftVersion::V_1_21);
+        write_particle(
+            &mut current.as_slice(),
+            JavaMinecraftVersion::V_1_21,
+            &mut out,
+        )
+        .unwrap();
+        let id =
+            remap_particle_id_for_version(Particle::Dust.to_id(), JavaMinecraftVersion::V_1_21);
         let mut expected = Vec::new();
         expected.write_var_int(&VarInt(i32::from(id))).unwrap();
         for value in [1.0f32, 0.0, 0.0, 2.0] {

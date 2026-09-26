@@ -43,6 +43,7 @@ pub mod block;
 pub mod chunk;
 pub mod entity;
 pub mod entity_data;
+pub mod inventory;
 pub mod item;
 pub mod light;
 pub mod login;

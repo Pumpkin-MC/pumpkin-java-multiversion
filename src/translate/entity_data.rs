@@ -142,8 +142,7 @@ fn variant_registry(serializer: i32) -> Option<&'static str> {
 }
 
 fn remap_registry_id(registry: &str, id: i32, version: JavaMinecraftVersion) -> i32 {
-    id_remap(registry, version, "")
-        .map_or(id, |remap| remap.get(id as u32) as i32)
+    id_remap(registry, version, "").map_or(id, |remap| remap.get(id as u32) as i32)
 }
 
 /// Reads one 26.3 value and writes it for `version`. `None` for values that are not
@@ -276,7 +275,8 @@ pub fn set_entity_data_from_current(
             continue;
         }
         out.push(field);
-        out.write_var_int(&VarInt(i32::from(client_serializer))).ok()?;
+        out.write_var_int(&VarInt(i32::from(client_serializer)))
+            .ok()?;
         out.extend_from_slice(&value);
     }
     out.push(u8::MAX);
@@ -314,7 +314,10 @@ mod tests {
         expected.extend_from_slice(&[0, 0, 0x20, 16, 8, 1, 9, 3]);
         expected.extend_from_slice(&10.0f32.to_be_bytes());
         expected.push(u8::MAX);
-        assert_eq!(set_entity_data_from_current(&current, V1_21_11), Some(expected));
+        assert_eq!(
+            set_entity_data_from_current(&current, V1_21_11),
+            Some(expected)
+        );
     }
 
     #[test]
@@ -325,7 +328,10 @@ mod tests {
         let (_, fields) = tables.fields.iter().find(|(e, _)| *e == "item").unwrap();
         assert_eq!(fields[8], 8);
         // 26.3's humanoid arm was 1.21.11's arm (38)
-        assert_eq!(tables.serializers[MetaDataType::HUMANOID_ARM.id as usize], 38);
+        assert_eq!(
+            tables.serializers[MetaDataType::HUMANOID_ARM.id as usize],
+            38
+        );
         assert_eq!(tables.serializers[MetaDataType::DYE_COLOR.id as usize], -1);
     }
 }

@@ -6,7 +6,7 @@ use pumpkin_util::version::JavaMinecraftVersion;
 use crate::packet::mappings::{self, PacketId};
 use crate::remap;
 use crate::translate::{
-    advancement, animation, block, chunk, entity, entity_data, light, login, movement,
+    advancement, animation, block, chunk, entity, entity_data, inventory, light, login, movement,
     player_spawn, recipe, reencode_current, registry, resource_pack, serverbound, tags, team, time,
 };
 
@@ -784,6 +784,17 @@ impl PacketTranslator {
             id if id == play::REMOVE_ENTITIES.current() => {
                 entity_data::remove_entities_from_current
             }
+            id if id == play::CONTAINER_SET_CONTENT.current() => {
+                inventory::container_set_content_from_current
+            }
+            id if id == play::CONTAINER_SET_SLOT.current() => {
+                inventory::container_set_slot_from_current
+            }
+            id if id == play::SET_CURSOR_ITEM.current() => inventory::set_cursor_item_from_current,
+            id if id == play::SET_PLAYER_INVENTORY.current() => {
+                inventory::set_player_inventory_from_current
+            }
+            id if id == play::SET_EQUIPMENT.current() => inventory::set_equipment_from_current,
             _ => return None,
         })
     }

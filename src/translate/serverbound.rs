@@ -98,6 +98,13 @@ pub fn play_to_current(
         return Some(Vec::new());
     }
 
+    if new_id == play::SET_CREATIVE_MODE_SLOT.current() {
+        return super::inventory::creative_slot_to_current(payload, version);
+    }
+    if new_id == play::CONTAINER_CLICK.current() {
+        return super::inventory::container_click_to_current(payload, version);
+    }
+
     // ACCEPT_TELEPORTATION (only teleport_id: VarInt before 26.3)
     if new_id == play::ACCEPT_TELEPORTATION.current() {
         let teleport_id = payload.get_var_int().ok()?;

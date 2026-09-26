@@ -8,12 +8,12 @@ use pumpkin_protocol::{
 use pumpkin_util::{math::position::BlockPos, version::JavaMinecraftVersion};
 
 use crate::packet::legacy::{CSpawnLivingEntity, CSpawnPainting};
-use crate::translate::entity_data;
 use crate::packet::mappings;
 use crate::remap::{
     block_state_remap::remap_block_state_for_version,
     entity_id_remap::{remap_entity_id_for_version, remap_object_type_for_version},
 };
+use crate::translate::entity_data;
 
 eras! {
     pub enum SpawnFormat {

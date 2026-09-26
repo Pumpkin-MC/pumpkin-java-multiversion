@@ -210,7 +210,8 @@ fn entity_data_tables() -> String {
             let ids = state.get_mut(entity.as_str()).unwrap();
             match (newer.get(entity), older.get(entity)) {
                 (Some(n), Some(o)) => {
-                    let step = step_fields(n, o, newer_mojang == mojang, &older_serializers, entity);
+                    let step =
+                        step_fields(n, o, newer_mojang == mojang, &older_serializers, entity);
                     for id in ids.iter_mut() {
                         *id = id.and_then(|id| step.get(&id).copied());
                     }
