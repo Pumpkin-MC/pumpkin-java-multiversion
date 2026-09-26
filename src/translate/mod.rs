@@ -44,6 +44,7 @@ pub mod block;
 pub mod chunk;
 pub mod entity;
 pub mod entity_data;
+pub mod explosion;
 pub mod inventory;
 pub mod item;
 pub mod light;

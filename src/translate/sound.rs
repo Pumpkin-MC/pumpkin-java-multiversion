@@ -29,7 +29,8 @@ eras! {
 
 const UI_SOURCE: i32 = 10;
 
-fn read_sound(read: &mut &[u8], version: JavaMinecraftVersion) -> Option<IdOr<SoundEvent>> {
+/// A 26.3 sound holder with the client's sound id.
+pub fn read_sound(read: &mut &[u8], version: JavaMinecraftVersion) -> Option<IdOr<SoundEvent>> {
     let sound = IdOr::read(read, |read| {
         Ok(SoundEvent {
             sound_name: read.get_str()?.into(),
