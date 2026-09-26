@@ -1,6 +1,6 @@
 //! Player spawn info: play LOGIN and RESPAWN.
 
-use pumpkin_data::packet::CURRENT_MC_VERSION;
+use pumpkin_data::{entity::EntityType, packet::CURRENT_MC_VERSION};
 use pumpkin_protocol::{
     ClientPacket,
     java::client::play::{CLogin, CRespawn, PlayerSpawnData},
@@ -8,12 +8,14 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
-use super::reencode_current;
+use super::{entity_data, reencode_current};
 
 /// LOGIN (play): game modes are var ints since 26.3, online mode added in 26.2.
 pub fn login_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
     let current = CURRENT_MC_VERSION;
     let entity_id = payload.get_i32_be().ok()?;
+    // The own player never gets an ADD_ENTITY
+    entity_data::track_spawn(entity_id, EntityType::PLAYER.id);
     let is_hardcore = payload.get_bool().ok()?;
     let dimension_names = payload
         .get_list(|read| read.get_str().map(String::from))

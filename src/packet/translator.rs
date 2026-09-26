@@ -6,9 +6,11 @@ use pumpkin_util::version::JavaMinecraftVersion;
 use crate::packet::mappings::{self, PacketId};
 use crate::remap;
 use crate::translate::{
-    advancement, animation, block, chunk, entity, light, login, movement, player_spawn, recipe,
-    reencode_current, registry, resource_pack, serverbound, tags, team, time,
+    advancement, animation, block, chunk, entity, entity_data, light, login, movement,
+    player_spawn, recipe, reencode_current, registry, resource_pack, serverbound, tags, team, time,
 };
+
+type PayloadTranslator = fn(&[u8], JavaMinecraftVersion) -> Option<Vec<u8>>;
 
 /// Converts the WIT-generated `JavaMinecraftVersion` into the internal `pumpkin_util` version.
 #[must_use]
@@ -722,8 +724,11 @@ impl PacketTranslator {
         }
 
         let client_id = Self::translate_clientbound_packet_id(packet_id, version)?;
-        let payload = Self::play_outgoing_payload(packet_id, raw_payload, version)
-            .unwrap_or_else(|| raw_payload.to_vec());
+        // A 26.3 payload the client cannot read is dropped, not sent
+        let payload = match Self::play_outgoing_payload(packet_id) {
+            Some(translate) => translate(raw_payload, version)?,
+            None => raw_payload.to_vec(),
+        };
         Some((client_id, payload))
     }
 
@@ -746,14 +751,11 @@ impl PacketTranslator {
         translate(raw_payload, version)
     }
 
-    fn play_outgoing_payload(
-        current_id: i32,
-        raw_payload: &[u8],
-        version: JavaMinecraftVersion,
-    ) -> Option<Vec<u8>> {
+    /// Payload translation of packets whose layout changed since the client's version.
+    fn play_outgoing_payload(current_id: i32) -> Option<PayloadTranslator> {
         use mappings::clientbound::play;
 
-        let translate = match current_id {
+        Some(match current_id {
             id if id == play::LOGIN.current() => player_spawn::login_from_current,
             id if id == play::RESPAWN.current() => player_spawn::respawn_from_current,
             id if id == play::UPDATE_ADVANCEMENTS.current() => {
@@ -776,9 +778,14 @@ impl PacketTranslator {
             id if id == play::SECTION_BLOCKS_UPDATE.current() => {
                 block::section_blocks_update_from_current
             }
+            id if id == play::SET_ENTITY_DATA.current() => {
+                entity_data::set_entity_data_from_current
+            }
+            id if id == play::REMOVE_ENTITIES.current() => {
+                entity_data::remove_entities_from_current
+            }
             _ => return None,
-        };
-        translate(raw_payload, version)
+        })
     }
 }
 

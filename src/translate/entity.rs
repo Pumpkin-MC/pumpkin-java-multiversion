@@ -8,6 +8,7 @@ use pumpkin_protocol::{
 use pumpkin_util::{math::position::BlockPos, version::JavaMinecraftVersion};
 
 use crate::packet::legacy::{CSpawnLivingEntity, CSpawnPainting};
+use crate::translate::entity_data;
 use crate::packet::mappings;
 use crate::remap::{
     block_state_remap::remap_block_state_for_version,
@@ -33,6 +34,7 @@ pub fn add_entity_from_current(
 ) -> Option<(i32, Vec<u8>)> {
     let spawn_entity = CSpawnEntity::read_packet_data(raw_payload, &CURRENT_MC_VERSION).ok()?;
     let entity_type_id = spawn_entity.r#type.0 as u16;
+    entity_data::track_spawn(spawn_entity.entity_id.0, entity_type_id);
     let format = SpawnFormat::of(version);
 
     if format < SpawnFormat::V1_19 && entity_type_id == EntityType::PAINTING.id {

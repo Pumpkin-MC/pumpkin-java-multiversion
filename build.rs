@@ -58,6 +58,195 @@ const SYNCED_REGISTRIES: &[&str] = &[
     "worldgen/block_state_provider",
 ];
 
+/// `assets/tracked_data` folders, newest first, and whether they use Mojang field names.
+const ENTITY_DATA_VERSIONS: &[(&str, bool)] = &[
+    ("26_2", true),
+    ("26_1", true),
+    ("1_21_11", false),
+    ("1_21_9", false),
+    ("1_21_7", false),
+    ("1_21_6", false),
+    ("1_21_5", false),
+    ("1_21_4", false),
+    ("1_21_2", false),
+    ("1_21", false),
+];
+
+/// Older serializer names with the same wire format, as 26.3 calls them.
+const SERIALIZER_RENAMES: &[(&str, &str)] = &[
+    ("integer", "int"),
+    ("text_component", "component"),
+    ("optional_text_component", "optional_component"),
+    ("rotation", "rotations"),
+    ("facing", "direction"),
+    ("lazy_entity_reference", "optional_living_entity_reference"),
+    ("optional_uuid", "optional_living_entity_reference"),
+    ("particle_list", "particles"),
+    ("optional_int", "optional_unsigned_int"),
+    ("entity_pose", "pose"),
+    ("oxidation_level", "weathering_copper_state"),
+    ("vector_3f", "vector3"),
+    ("vector3f", "vector3"),
+    ("quaternion_f", "quaternion"),
+    ("quaternionf", "quaternion"),
+    ("profile", "resolvable_profile"),
+    ("arm", "humanoid_arm"),
+];
+
+/// 26.1 fields 1.21.11 lacks, besides those with serializers it lacks. The rest keep their order.
+/// TODO more Versions may add fields, but 26.1 is the only one that removed any
+const FIELDS_ADDED_IN_26_1: &[&str] = &["AGE_LOCKED", "DATA_VILLAGER_DATA_FINALIZED"];
+
+/// Base `Entity` fields, the same in every version with tracked data.
+const BASE_FIELDS: u8 = 8;
+
+struct Field {
+    name: String,
+    id: u8,
+    serializer: String,
+}
+
+fn serializer_name(name: &str) -> String {
+    SERIALIZER_RENAMES
+        .iter()
+        .find(|(old, _)| *old == name)
+        .map_or(name, |(_, new)| new)
+        .to_string()
+}
+
+/// Entity name to its fields, sorted by id.
+fn load_tracked(folder: &str) -> HashMap<String, Vec<Field>> {
+    let path = format!("assets/tracked_data/{folder}_tracked_data.json");
+    let json: HashMap<String, HashMap<String, Value>> =
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    json.into_iter()
+        .map(|(entity, fields)| {
+            let mut fields: Vec<_> = fields
+                .into_iter()
+                .map(|(name, field)| Field {
+                    name,
+                    id: field["id"].as_u64().unwrap() as u8,
+                    serializer: serializer_name(field["type"].as_str().unwrap()),
+                })
+                .collect();
+            fields.sort_by_key(|f| f.id);
+            (entity, fields)
+        })
+        .collect()
+}
+
+fn load_serializers(folder: &str) -> HashMap<String, i64> {
+    let path = format!("assets/meta_data_type/{folder}_meta_data_type.json");
+    let json: HashMap<String, i64> =
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    json.into_iter()
+        .map(|(name, id)| (serializer_name(&name), id))
+        .collect()
+}
+
+/// Field ids of `older` by field id of `newer`, for one entity.
+fn step_fields(
+    newer: &[Field],
+    older: &[Field],
+    same_names: bool,
+    older_serializers: &HashMap<String, i64>,
+    entity: &str,
+) -> HashMap<u8, u8> {
+    if same_names {
+        return newer
+            .iter()
+            .filter_map(|n| {
+                let o = older
+                    .iter()
+                    .find(|o| o.name == n.name && o.serializer == n.serializer)?;
+                Some((n.id, o.id))
+            })
+            .collect();
+    }
+    // Mojang to Yarn names (26.1 to 1.21.11): only added fields differ
+    let kept: Vec<_> = newer
+        .iter()
+        .filter(|n| {
+            !FIELDS_ADDED_IN_26_1.contains(&n.name.as_str())
+                && older_serializers.contains_key(&n.serializer)
+        })
+        .collect();
+    assert!(
+        kept.len() == older.len()
+            && kept
+                .iter()
+                .zip(older)
+                .all(|(n, o)| n.serializer == o.serializer),
+        "entity data of {entity} does not line up between 26.1 and 1.21.11"
+    );
+    kept.iter().zip(older).map(|(n, o)| (n.id, o.id)).collect()
+}
+
+/// Per client version: serializer ids and field ids by 26.3's, 255 / -1 where the client lacks them.
+fn entity_data_tables() -> String {
+    let current = load_tracked("26_3");
+    let current_serializers = load_serializers("26_3");
+    let mut current_serializer_names: Vec<_> = current_serializers.iter().collect();
+    current_serializer_names.sort_by_key(|(_, id)| **id);
+
+    let mut entities: Vec<_> = current.keys().cloned().collect();
+    entities.sort();
+    // 26.3 field id to the id in the version processed last
+    let mut state: HashMap<&str, Vec<Option<u8>>> = entities
+        .iter()
+        .map(|e| {
+            let len = current[e].last().map_or(0, |f| usize::from(f.id) + 1);
+            (e.as_str(), (0..len).map(|id| Some(id as u8)).collect())
+        })
+        .collect();
+
+    let mut out = String::from("/* Generated by build.rs from assets/tracked_data. */\n");
+    let mut newer = current;
+    let mut newer_mojang = true;
+    for &(folder, mojang) in ENTITY_DATA_VERSIONS {
+        let older = load_tracked(folder);
+        let older_serializers = load_serializers(folder);
+        for entity in &entities {
+            let ids = state.get_mut(entity.as_str()).unwrap();
+            match (newer.get(entity), older.get(entity)) {
+                (Some(n), Some(o)) => {
+                    let step = step_fields(n, o, newer_mojang == mojang, &older_serializers, entity);
+                    for id in ids.iter_mut() {
+                        *id = id.and_then(|id| step.get(&id).copied());
+                    }
+                }
+                // The client spawns another entity; only the base fields carry over
+                _ => {
+                    for (i, id) in ids.iter_mut().enumerate() {
+                        *id = id.filter(|_| i < usize::from(BASE_FIELDS));
+                    }
+                }
+            }
+        }
+
+        let serializers: Vec<i64> = current_serializer_names
+            .iter()
+            .map(|(name, _)| older_serializers.get(*name).copied().unwrap_or(-1))
+            .collect();
+        let _ = write!(
+            out,
+            "pub static ENTITY_DATA_{}: EntityDataTables = EntityDataTables {{ serializers: &{serializers:?}, fields: &[",
+            folder.to_uppercase()
+        );
+        for entity in &entities {
+            let ids: Vec<u8> = state[entity.as_str()]
+                .iter()
+                .map(|id| id.unwrap_or(u8::MAX))
+                .collect();
+            let _ = write!(out, "({entity:?}, &{ids:?}),");
+        }
+        let _ = writeln!(out, "] }};");
+        newer = older;
+        newer_mojang = mojang;
+    }
+    out
+}
+
 fn json_to_nbt_tag(v: &Value) -> NbtTag {
     match v {
         Value::Null => NbtTag::End,
@@ -139,6 +328,8 @@ fn byte_literal(bytes: &[u8]) -> String {
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=assets/datapacks");
+    println!("cargo:rerun-if-changed=assets/tracked_data");
+    println!("cargo:rerun-if-changed=assets/meta_data_type");
 
     let mut blobs: Vec<Vec<u8>> = Vec::new();
     let mut blob_ids: HashMap<Vec<u8>, usize> = HashMap::new();
@@ -215,4 +406,9 @@ fn main() {
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
     fs::write(Path::new(&out_dir).join("registry.rs"), out).unwrap();
+    fs::write(
+        Path::new(&out_dir).join("entity_data.rs"),
+        entity_data_tables(),
+    )
+    .unwrap();
 }
