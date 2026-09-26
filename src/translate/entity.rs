@@ -102,3 +102,39 @@ pub fn add_entity_from_current(
     modified_spawn.write_packet_data(&mut buf, &version).ok()?;
     Some((mappings::clientbound::play::ADD_ENTITY.to_id(version), buf))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn standing_mob_gets_the_client_type() {
+        let version = JavaMinecraftVersion::V_1_21_11;
+        let spawn = |r#type: u16| {
+            CSpawnEntity::new(
+                VarInt(40),
+                uuid::Uuid::nil(),
+                VarInt(i32::from(r#type)),
+                pumpkin_util::math::vector3::Vector3::new(1.0, 64.0, -3.0),
+                10.0,
+                90.0,
+                90.0,
+                VarInt(0),
+                pumpkin_util::math::vector3::Vector3::new(0.0, 0.0, 0.0),
+            )
+        };
+        let mut current = Vec::new();
+        spawn(EntityType::WARDEN.id)
+            .write_packet_data(&mut current, &CURRENT_MC_VERSION)
+            .unwrap();
+        let client_type = remap_entity_id_for_version(EntityType::WARDEN.id, version);
+        let mut expected = Vec::new();
+        spawn(client_type)
+            .write_packet_data(&mut expected, &version)
+            .unwrap();
+        assert_eq!(
+            add_entity_from_current(&current, version),
+            Some((CSpawnEntity::to_id(version), expected))
+        );
+    }
+}

@@ -12,6 +12,7 @@ use crate::translate::{
 };
 
 type PayloadTranslator = fn(&[u8], JavaMinecraftVersion) -> Option<Vec<u8>>;
+type IdAndPayloadTranslator = fn(&[u8], JavaMinecraftVersion) -> Option<(i32, Vec<u8>)>;
 
 /// Converts the WIT-generated `JavaMinecraftVersion` into the internal `pumpkin_util` version.
 #[must_use]
@@ -723,8 +724,8 @@ impl PacketTranslator {
         if version == CURRENT_MC_VERSION {
             return None;
         }
-        if let Some(translated) = Self::play_outgoing_packet(packet_id, raw_payload, version) {
-            return Some(translated);
+        if let Some(translate) = Self::play_outgoing_packet(packet_id) {
+            return translate(raw_payload, version);
         }
 
         let client_id = Self::translate_clientbound_packet_id(packet_id, version)?;
@@ -737,22 +738,17 @@ impl PacketTranslator {
     }
 
     /// Packets whose client id depends on the version or payload.
-    fn play_outgoing_packet(
-        current_id: i32,
-        raw_payload: &[u8],
-        version: JavaMinecraftVersion,
-    ) -> Option<(i32, Vec<u8>)> {
+    fn play_outgoing_packet(current_id: i32) -> Option<IdAndPayloadTranslator> {
         use mappings::clientbound::play;
 
-        let translate = match current_id {
+        Some(match current_id {
             id if id == play::ADD_ENTITY.current() => entity::add_entity_from_current,
             id if id == play::ENTITY_POSITION_SYNC.current() => {
                 movement::position_sync_from_current
             }
             id if id == play::SWING_ANIMATION.current() => animation::swing_from_current,
             _ => return None,
-        };
-        translate(raw_payload, version)
+        })
     }
 
     /// Payload translation of packets whose layout changed since the client's version.
