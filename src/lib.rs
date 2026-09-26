@@ -166,6 +166,9 @@ impl EventHandler<ConnectionPacketSentEvent> for ConnectionPacketSentHandler {
         mut event: ConnectionPacketSentEventData,
     ) -> ConnectionPacketSentEventData {
         let version = from_wasm_java_version(event.version);
+        if version == CURRENT_MC_VERSION {
+            return event;
+        }
         match PacketTranslator::translate_connection_outgoing(
             event.state,
             event.packet_id,

@@ -7,8 +7,8 @@ use crate::packet::mappings::{self, PacketId};
 use crate::remap;
 use crate::translate::{
     advancement, animation, attribute, block, chunk, entity, entity_data, explosion, inventory,
-    light, login, movement, player_spawn, recipe, reencode_current, registry, resource_pack,
-    serverbound, sound, tags, team, time,
+    light, login, movement, player_spawn, plugin_message, recipe, reencode_current, registry,
+    resource_pack, serverbound, sound, tags, team, time,
 };
 
 type PayloadTranslator = fn(&[u8], JavaMinecraftVersion) -> Option<Vec<u8>>;
@@ -636,6 +636,11 @@ impl PacketTranslator {
             {
                 resource_pack::response_to_current(raw_payload, version)
             }
+            ConnectionState::Config
+                if new_id == mappings::serverbound::config::CUSTOM_PAYLOAD.current() =>
+            {
+                plugin_message::to_current(raw_payload, version)
+            }
             _ => None,
         };
         Some((
@@ -671,6 +676,11 @@ impl PacketTranslator {
             {
                 tags::update_tags_from_current(raw_payload, version)
             }
+            ConnectionState::Config
+                if current_id == mappings::clientbound::config::CUSTOM_PAYLOAD.current() =>
+            {
+                plugin_message::from_current(raw_payload, version)
+            }
             _ => None,
         }
     }
@@ -701,6 +711,11 @@ impl PacketTranslator {
         let client_id = Self::translate_connection_outgoing_id(state, current_id, version)?;
         if version == CURRENT_MC_VERSION {
             return Some((client_id, raw_payload.to_vec()));
+        }
+        if version < JavaMinecraftVersion::V_1_8
+            && current_id == mappings::clientbound::login::LOGIN_COMPRESSION.current()
+        {
+            return None;
         }
         if matches!(state, ConnectionState::Config)
             && current_id == mappings::clientbound::config::REGISTRY_DATA.current()
