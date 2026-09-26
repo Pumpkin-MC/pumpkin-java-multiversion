@@ -1,0 +1,166 @@
+//! Entity movement: MOVE_ENTITY_POS, MOVE_ENTITY_POS_ROT, MOVE_ENTITY_ROT, ENTITY_POSITION_SYNC.
+
+use pumpkin_protocol::{
+    ClientPacket, MultiVersionJavaPacket,
+    java::client::play::{
+        CEntityPositionSync, CUpdateEntityPos, CUpdateEntityPosRot, CUpdateEntityRot,
+    },
+    ser::NetworkReadExt,
+};
+use pumpkin_util::{math::vector3::Vector3, version::JavaMinecraftVersion};
+
+fn write(packet: &impl ClientPacket, version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    packet.write_packet_data(&mut out, &version).ok()?;
+    Some(out)
+}
+
+/// Since 26.3 a var int of `on_ground | steps << 1` precedes the delta. `None` for multi-step
+/// deltas, which older clients cannot express.
+fn on_ground_and_linear(read: &mut &[u8]) -> Option<bool> {
+    let properties = read.get_var_int().ok()?.0;
+    (properties >> 1 == 0).then_some(properties & 1 != 0)
+}
+
+fn delta(read: &mut &[u8]) -> Option<Vector3<i16>> {
+    Some(Vector3::new(
+        read.get_i16_be().ok()?,
+        read.get_i16_be().ok()?,
+        read.get_i16_be().ok()?,
+    ))
+}
+
+pub fn pos_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+    let entity_id = payload.get_var_int().ok()?;
+    let on_ground = on_ground_and_linear(&mut payload)?;
+    let delta = delta(&mut payload)?;
+    write(&CUpdateEntityPos::new(entity_id, delta, on_ground), version)
+}
+
+pub fn pos_rot_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+    let entity_id = payload.get_var_int().ok()?;
+    let on_ground = on_ground_and_linear(&mut payload)?;
+    let delta = delta(&mut payload)?;
+    let yaw = payload.get_u8().ok()?;
+    let pitch = payload.get_u8().ok()?;
+    write(
+        &CUpdateEntityPosRot::new(entity_id, delta, yaw, pitch, on_ground),
+        version,
+    )
+}
+
+/// On ground moved in front of the rotation in 26.3.
+pub fn rot_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+    let entity_id = payload.get_var_int().ok()?;
+    let on_ground = payload.get_bool().ok()?;
+    let yaw = payload.get_u8().ok()?;
+    let pitch = payload.get_u8().ok()?;
+    write(
+        &CUpdateEntityRot::new(entity_id, yaw, pitch, on_ground),
+        version,
+    )
+}
+
+/// ENTITY_POSITION_SYNC, as `(client packet id, payload)`: since 26.3 a path replaces the
+/// delta; TELEPORT_ENTITY before 1.21.2. `None` for non-linear paths.
+// TODO: the velocity older clients expect is sent as zero.
+pub fn position_sync_from_current(
+    mut payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<(i32, Vec<u8>)> {
+    let entity_id = payload.get_var_int().ok()?;
+    if payload.get_var_int().ok()?.0 != 0 {
+        return None;
+    }
+    let position = Vector3::new(
+        payload.get_f64_be().ok()?,
+        payload.get_f64_be().ok()?,
+        payload.get_f64_be().ok()?,
+    );
+    let yaw = payload.get_f32_be().ok()?;
+    let pitch = payload.get_f32_be().ok()?;
+    let on_ground = payload.get_bool().ok()?;
+    let packet = CEntityPositionSync::new(
+        entity_id,
+        position,
+        Vector3::new(0.0, 0.0, 0.0),
+        yaw,
+        pitch,
+        on_ground,
+    );
+    Some((
+        CEntityPositionSync::to_id(version),
+        write(&packet, version)?,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use pumpkin_data::packet::CURRENT_MC_VERSION;
+    use pumpkin_protocol::VarInt;
+
+    use super::*;
+
+    const VERSIONS: [JavaMinecraftVersion; 3] = [
+        JavaMinecraftVersion::V_1_21_11,
+        JavaMinecraftVersion::V_1_12_2,
+        JavaMinecraftVersion::V_1_7_6,
+    ];
+
+    fn check(
+        packet: &impl ClientPacket,
+        translate: fn(&[u8], JavaMinecraftVersion) -> Option<Vec<u8>>,
+    ) {
+        let current = write(packet, CURRENT_MC_VERSION).unwrap();
+        for version in VERSIONS {
+            assert_eq!(
+                translate(&current, version),
+                write(packet, version),
+                "{version:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn movement_matches_direct_encode() {
+        let delta = Vector3::new(4096, -128, 300);
+        for on_ground in [true, false] {
+            check(
+                &CUpdateEntityPos::new(VarInt(9), delta, on_ground),
+                pos_from_current,
+            );
+            check(
+                &CUpdateEntityPosRot::new(VarInt(9), delta, 64, 200, on_ground),
+                pos_rot_from_current,
+            );
+            check(
+                &CUpdateEntityRot::new(VarInt(9), 64, 200, on_ground),
+                rot_from_current,
+            );
+        }
+    }
+
+    #[test]
+    fn position_sync_drops_path() {
+        let zero = Vector3::new(0.0, 0.0, 0.0);
+        let packet = CEntityPositionSync::new(
+            VarInt(3),
+            Vector3::new(1.5, 64.0, -2.25),
+            zero,
+            90.0,
+            10.0,
+            true,
+        );
+        let current = write(&packet, CURRENT_MC_VERSION).unwrap();
+        for version in VERSIONS {
+            let expected = (
+                CEntityPositionSync::to_id(version),
+                write(&packet, version).unwrap(),
+            );
+            assert_eq!(
+                position_sync_from_current(&current, version),
+                Some(expected)
+            );
+        }
+    }
+}

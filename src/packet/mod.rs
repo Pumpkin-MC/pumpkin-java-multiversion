@@ -63,3 +63,11 @@ pub fn is_version_supported(version: JavaMinecraftVersion) -> bool {
             | JavaMinecraftVersion::V_26_3
     )
 }
+
+impl mappings::PacketId {
+    /// The packet's id in the version core speaks (26.3).
+    #[must_use]
+    pub const fn current(&self) -> i32 {
+        self.to_id(pumpkin_data::packet::CURRENT_MC_VERSION)
+    }
+}

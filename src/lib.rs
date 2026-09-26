@@ -1,8 +1,7 @@
-#[cfg(not(target_family = "wasm"))]
-pub mod chunk;
 pub mod packet;
 pub mod remap;
 pub mod tag;
+pub mod translate;
 
 use pumpkin_plugin_api::{
     Context, Plugin, PluginMetadata, Server,
@@ -21,6 +20,7 @@ use pumpkin_plugin_api::{
 };
 
 use crate::packet::translator::{PacketTranslator, from_wasm_java_version};
+use pumpkin_data::packet::CURRENT_MC_VERSION;
 
 /// The multi-version plugin allowing Minecraft Java clients across versions (1.7 - 26.2)
 /// to connect to a Pumpkin 26.3 server.
@@ -80,13 +80,20 @@ impl EventHandler<PacketReceivedEvent> for PacketReceivedHandler {
     ) -> PacketReceivedEventData {
         if let Some(java_player) = event.player.as_java() {
             let version = from_wasm_java_version(java_player.get_version());
-            if let Some((new_id, new_payload)) = PacketTranslator::translate_incoming_packet(
+            if version == CURRENT_MC_VERSION {
+                return event;
+            }
+            // An id with no current counterpart would reach the wrong handler
+            match PacketTranslator::translate_incoming_packet(
                 event.packet_id,
                 &event.raw_payload,
                 version,
             ) {
-                event.packet_id = new_id;
-                event.raw_payload = new_payload;
+                Some((new_id, new_payload)) => {
+                    event.packet_id = new_id;
+                    event.raw_payload = new_payload;
+                }
+                None => event.cancelled = true,
             }
         }
         event
@@ -100,13 +107,20 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
     fn handle(&self, _server: Server, mut event: PacketSentEventData) -> PacketSentEventData {
         if let Some(java_player) = event.player.as_java() {
             let version = from_wasm_java_version(java_player.get_version());
-            if let Some((new_id, new_payload)) = PacketTranslator::translate_outgoing_packet(
+            if version == CURRENT_MC_VERSION {
+                return event;
+            }
+            // A current id means a different packet to the client, so drop what has none
+            match PacketTranslator::translate_outgoing_packet(
                 event.packet_id,
                 &event.raw_payload,
                 version,
             ) {
-                event.packet_id = new_id;
-                event.raw_payload = new_payload;
+                Some((new_id, new_payload)) => {
+                    event.packet_id = new_id;
+                    event.raw_payload = new_payload;
+                }
+                None => event.cancelled = true,
             }
         }
         event
@@ -123,14 +137,20 @@ impl EventHandler<ConnectionPacketReceivedEvent> for ConnectionPacketReceivedHan
         mut event: ConnectionPacketReceivedEventData,
     ) -> ConnectionPacketReceivedEventData {
         let version = from_wasm_java_version(event.version);
-        if let Some((new_id, new_payload)) = PacketTranslator::translate_connection_incoming(
+        if version == CURRENT_MC_VERSION {
+            return event;
+        }
+        match PacketTranslator::translate_connection_incoming(
             event.state,
             event.packet_id,
             &event.raw_payload,
             version,
         ) {
-            event.packet_id = new_id;
-            event.raw_payload = new_payload;
+            Some((new_id, new_payload)) => {
+                event.packet_id = new_id;
+                event.raw_payload = new_payload;
+            }
+            None => event.cancelled = true,
         }
         event
     }
