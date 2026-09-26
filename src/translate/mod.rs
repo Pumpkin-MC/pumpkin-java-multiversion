@@ -38,6 +38,7 @@ macro_rules! eras {
 
 pub mod advancement;
 pub mod animation;
+pub mod attribute;
 pub mod biome;
 pub mod block;
 pub mod chunk;
@@ -56,6 +57,7 @@ pub mod recipe;
 pub mod registry;
 pub mod resource_pack;
 pub mod serverbound;
+pub mod sound;
 pub mod tags;
 pub mod team;
 pub mod time;

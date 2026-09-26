@@ -6,8 +6,9 @@ use pumpkin_util::version::JavaMinecraftVersion;
 use crate::packet::mappings::{self, PacketId};
 use crate::remap;
 use crate::translate::{
-    advancement, animation, block, chunk, entity, entity_data, inventory, light, login, movement,
-    player_spawn, recipe, reencode_current, registry, resource_pack, serverbound, tags, team, time,
+    advancement, animation, attribute, block, chunk, entity, entity_data, inventory, light, login,
+    movement, player_spawn, recipe, reencode_current, registry, resource_pack, serverbound, sound,
+    tags, team, time,
 };
 
 type PayloadTranslator = fn(&[u8], JavaMinecraftVersion) -> Option<Vec<u8>>;
@@ -795,6 +796,12 @@ impl PacketTranslator {
                 inventory::set_player_inventory_from_current
             }
             id if id == play::SET_EQUIPMENT.current() => inventory::set_equipment_from_current,
+            id if id == play::SOUND.current() => sound::sound_from_current,
+            id if id == play::UPDATE_ATTRIBUTES.current() => {
+                attribute::update_attributes_from_current
+            }
+            id if id == play::SOUND_ENTITY.current() => sound::sound_entity_from_current,
+            id if id == play::STOP_SOUND.current() => sound::stop_sound_from_current,
             _ => return None,
         })
     }
