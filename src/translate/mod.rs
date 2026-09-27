@@ -42,6 +42,7 @@ pub mod attribute;
 pub mod biome;
 pub mod block;
 pub mod chunk;
+pub mod commands;
 pub mod entity;
 pub mod entity_data;
 pub mod explosion;

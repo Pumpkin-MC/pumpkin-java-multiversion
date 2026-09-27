@@ -6,8 +6,8 @@ use pumpkin_util::version::JavaMinecraftVersion;
 use crate::packet::mappings::{self, PacketId};
 use crate::remap;
 use crate::translate::{
-    advancement, animation, attribute, block, chunk, entity, entity_data, explosion, game_event,
-    inventory, light, login, movement, particle, player_spawn, plugin_message, recipe,
+    advancement, animation, attribute, block, chunk, commands, entity, entity_data, explosion,
+    game_event, inventory, light, login, movement, particle, player_spawn, plugin_message, recipe,
     reencode_current, registry, resource_pack, serverbound, sound, tags, team, time,
 };
 
@@ -772,6 +772,7 @@ impl PacketTranslator {
 
         Some(match current_id {
             id if id == play::LOGIN.current() => player_spawn::login_from_current,
+            id if id == play::COMMANDS.current() => commands::commands_from_current,
             id if id == play::RESPAWN.current() => player_spawn::respawn_from_current,
             id if id == play::SET_DEFAULT_SPAWN_POSITION.current() => {
                 player_spawn::spawn_position_from_current
