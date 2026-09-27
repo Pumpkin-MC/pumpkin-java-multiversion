@@ -1,11 +1,12 @@
-//! Particles: id and options.
+//! Particles: id and options, LEVEL_PARTICLES.
 
 use pumpkin_data::particle::Particle;
 use pumpkin_protocol::{
-    VarInt,
+    ClientPacket, VarInt,
+    java::client::play::CParticle,
     ser::{NetworkReadExt, NetworkWriteExt},
 };
-use pumpkin_util::version::JavaMinecraftVersion;
+use pumpkin_util::{math::vector3::Vector3, version::JavaMinecraftVersion};
 
 use crate::remap::particle_id_remap::remap_particle_id_for_version;
 use crate::translate::block::remap_state;
@@ -145,6 +146,66 @@ pub fn write_particle(
     Some(())
 }
 
+fn read_f32_vec3(read: &mut &[u8]) -> Option<Vector3<f32>> {
+    Some(Vector3::new(
+        read.get_f32_be().ok()?,
+        read.get_f32_be().ok()?,
+        read.get_f32_be().ok()?,
+    ))
+}
+
+/// LEVEL_PARTICLES: 26.3 moved the particle to the front, split the speed per axis, made the
+/// count a var int and added a randomization type. Core's writer handles every older layout.
+pub fn level_particles_from_current(
+    mut payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<Vec<u8>> {
+    let mut particle = Vec::new();
+    write_particle(&mut payload, version, &mut particle)?;
+    let important = payload.get_bool().ok()?;
+    let force_spawn = payload.get_bool().ok()?;
+    let position = Vector3::new(
+        payload.get_f64_be().ok()?,
+        payload.get_f64_be().ok()?,
+        payload.get_f64_be().ok()?,
+    );
+    let offset = read_f32_vec3(&mut payload)?;
+    let speed = read_f32_vec3(&mut payload)?;
+    let count = payload.get_var_int().ok()?.0;
+    let _randomization = payload.get_var_int().ok()?;
+
+    let (offset, max_speed) = if speed.x == speed.y && speed.y == speed.z {
+        (offset, speed.x)
+    } else if count <= 0 {
+        // A count of 0 uses offset * speed as the velocity, so fold the speeds into the offsets
+        (
+            Vector3::new(offset.x * speed.x, offset.y * speed.y, offset.z * speed.z),
+            1.0,
+        )
+    } else {
+        // TODO: per axis speeds and the alternative randomization need one packet per
+        // particle (ViaBackwards `BlockItemPacketRewriter26_3`); core sends neither yet
+        (offset, speed.x)
+    };
+
+    let mut particle = particle.as_slice();
+    let particle_id = particle.get_var_int().ok()?;
+    let mut out = Vec::new();
+    CParticle::new(
+        force_spawn,
+        important,
+        position,
+        offset,
+        max_speed,
+        count,
+        particle_id,
+        particle,
+    )
+    .write_packet_data(&mut out, &version)
+    .ok()?;
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +234,39 @@ mod tests {
             expected.write_f32_be(value).unwrap();
         }
         assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn level_particles_use_the_26_2_layout() {
+        use pumpkin_data::packet::CURRENT_MC_VERSION;
+
+        let flame = VarInt(i32::from(Particle::Flame.to_id()));
+        let packet = |id| {
+            CParticle::new(
+                true,
+                false,
+                Vector3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.1, 0.2, 0.3),
+                0.5,
+                10,
+                id,
+                &[],
+            )
+        };
+        let mut current = Vec::new();
+        packet(flame)
+            .write_packet_data(&mut current, &CURRENT_MC_VERSION)
+            .unwrap();
+
+        let version = JavaMinecraftVersion::V_26_2;
+        let id = remap_particle_id_for_version(Particle::Flame.to_id(), version);
+        let mut expected = Vec::new();
+        packet(VarInt(i32::from(id)))
+            .write_packet_data(&mut expected, &version)
+            .unwrap();
+        assert_eq!(
+            level_particles_from_current(&current, version),
+            Some(expected)
+        );
     }
 }
