@@ -38,17 +38,3 @@ pub fn swing_from_current(
     // Core's ids are 26.3's
     Some((ANIMATE.to_id(version), out))
 }
-
-#[cfg(test)]
-mod tests {
-    use pumpkin_data::packet::CURRENT_MC_VERSION;
-    use pumpkin_protocol::java::client::play::{Animation, CEntityAnimation};
-
-    use super::*;
-
-    fn write(packet: &impl ClientPacket, version: JavaMinecraftVersion) -> Vec<u8> {
-        let mut out = Vec::new();
-        packet.write_packet_data(&mut out, &version).unwrap();
-        out
-    }
-}
