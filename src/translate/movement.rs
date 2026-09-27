@@ -1,11 +1,11 @@
 //! Entity movement: MOVE_ENTITY_POS, MOVE_ENTITY_POS_ROT, MOVE_ENTITY_ROT, ENTITY_POSITION_SYNC,
-//! SET_ENTITY_MOTION, PLAYER_ROTATION.
+//! SET_ENTITY_MOTION, PLAYER_ROTATION, PLAYER_POSITION.
 
 use pumpkin_protocol::{
     ClientPacket,
     codec::lp_vector_3d::LpVector3d,
     java::client::play::{
-        CEntityPositionSync, CEntityVelocity, CPlayerRotation, CUpdateEntityPos,
+        CEntityPositionSync, CEntityVelocity, CPlayerPosition, CPlayerRotation, CUpdateEntityPos,
         CUpdateEntityPosRot, CUpdateEntityRot,
     },
     ser::NetworkReadExt,
@@ -133,6 +133,16 @@ pub fn player_rotation_from_current(
     write(&CPlayerRotation { yaw, pitch }, version)
 }
 
+/// PLAYER_POSITION: core's writer has every layout; before 1.21.2 the flags are a byte and
+/// the teleport id comes last.
+// TODO: the delta is dropped before 1.21.2; Via sends it as a separate entity motion
+pub fn player_position_from_current(
+    payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<Vec<u8>> {
+    super::reencode_current::<CPlayerPosition>(payload, version)
+}
+
 #[cfg(test)]
 mod tests {
     use pumpkin_data::packet::CURRENT_MC_VERSION;
@@ -158,6 +168,21 @@ mod tests {
                 "{version:?}"
             );
         }
+    }
+
+    #[test]
+    fn player_position_matches_direct_encode() {
+        check(
+            &CPlayerPosition::new(
+                VarInt(3),
+                Vector3::new(1.5, 64.0, -2.5),
+                Vector3::new(0.0, 0.0, 0.0),
+                90.0,
+                10.0,
+                Vec::new(),
+            ),
+            player_position_from_current,
+        );
     }
 
     #[test]
