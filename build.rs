@@ -1,4 +1,5 @@
-//! Per-version synced registries from `assets/datapacks`, as network NBT.
+//! Per-version synced registries from `assets/datapacks`, as network NBT, and block id remaps
+//! from the ViaBackwards mappings.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -326,6 +327,185 @@ fn byte_literal(bytes: &[u8]) -> String {
     out
 }
 
+/// ViaBackwards mapping files from 26.3 down to 1.13, the first version with block tags.
+/// Each step maps the newer version's ids to the named older version's.
+const BLOCK_ID_CHAIN: &[(&str, &str)] = &[
+    ("V_26_2", "26.3to26.2"),
+    ("V_26_1", "26.2to26.1"),
+    ("V_1_21_11", "26.1to1.21.11"),
+    ("V_1_21_9", "1.21.11to1.21.9"),
+    ("V_1_21_7", "1.21.9to1.21.7"),
+    ("V_1_21_6", "1.21.7to1.21.6"),
+    ("V_1_21_5", "1.21.6to1.21.5"),
+    ("V_1_21_4", "1.21.5to1.21.4"),
+    ("V_1_21_2", "1.21.4to1.21.2"),
+    ("V_1_21", "1.21.2to1.21"),
+    ("V_1_20_5", "1.21to1.20.5"),
+    ("V_1_20_3", "1.20.5to1.20.3"),
+    ("V_1_20_2", "1.20.3to1.20.2"),
+    ("V_1_20", "1.20.2to1.20"),
+    ("V_1_19_4", "1.20to1.19.4"),
+    ("V_1_19_3", "1.19.4to1.19.3"),
+    ("V_1_19", "1.19.3to1.19"),
+    ("V_1_18", "1.19to1.18"),
+    ("V_1_17", "1.18to1.17"),
+    ("V_1_16_2", "1.17to1.16.2"),
+    ("V_1_16", "1.16.2to1.16"),
+    ("V_1_15", "1.16to1.15"),
+    ("V_1_14", "1.15to1.14"),
+    ("V_1_13_2", "1.14to1.13.2"),
+    ("V_1_13", "1.13.2to1.13"),
+];
+
+fn read_var_int(bytes: &mut &[u8]) -> Option<i32> {
+    let mut result = 0i32;
+    for shift in 0..5 {
+        let (&b, rest) = bytes.split_first()?;
+        *bytes = rest;
+        result |= i32::from(b & 0x7F) << (7 * shift);
+        if b & 0x80 == 0 {
+            return Some(result);
+        }
+    }
+    None
+}
+
+fn read_zigzag(bytes: &mut &[u8]) -> Option<i32> {
+    let value = read_var_int(bytes)? as u32;
+    Some((value >> 1) as i32 ^ -((value & 1) as i32))
+}
+
+fn as_bytes(values: &[i8]) -> Vec<u8> {
+    values.iter().map(|&b| b as u8).collect()
+}
+
+/// Delta coded `(at, value)` pairs of the compact shift and change strategies.
+fn at_value_pairs(values: &[i8]) -> Vec<(i32, i32)> {
+    let bytes = as_bytes(values);
+    let mut read = bytes.as_slice();
+    let (mut at, mut value) = (-1, 0);
+    let mut pairs = Vec::new();
+    while let Some(diff_at) = read_var_int(&mut read) {
+        at += 1 + diff_at;
+        value += read_zigzag(&mut read).unwrap_or(0);
+        pairs.push((at, value));
+    }
+    pairs
+}
+
+/// Via's `blocks` section as newer id -> older id (`-1` unmapped). `None` means unchanged.
+fn via_blocks(file: &str) -> Option<Vec<i32>> {
+    use pumpkin_nbt::deserializer::NbtReadHelperJava;
+
+    let path = format!("assets/viabackwards/data/mappings-{file}.nbt");
+    println!("cargo:rerun-if-changed={path}");
+    let bytes = fs::read(&path).unwrap();
+    let nbt = Nbt::read(&mut NbtReadHelperJava::new(std::io::Cursor::new(bytes))).unwrap();
+    let section = nbt.root_tag.get_compound("blocks")?;
+    let size = |fallback: i32| section.get_int("size").unwrap_or(fallback) as usize;
+    Some(match section.get_byte("id").unwrap() {
+        // Direct
+        0 => {
+            if let Some(values) = section.get_int_array("val") {
+                values.to_vec()
+            } else {
+                let bytes = as_bytes(section.get_byte_array("val").unwrap());
+                let mut read = bytes.as_slice();
+                let mut prev = 0;
+                (0..size(section.get_int("mappedSize").unwrap()))
+                    .map(|_| {
+                        prev += read_zigzag(&mut read).unwrap_or(0);
+                        prev
+                    })
+                    .collect()
+            }
+        }
+        // Shifts
+        1 => {
+            let pairs = match (section.get_int_array("at"), section.get_int_array("to")) {
+                (Some(at), Some(to)) => at.iter().copied().zip(to.iter().copied()).collect(),
+                _ => at_value_pairs(section.get_byte_array("val").unwrap()),
+            };
+            let size = size(0);
+            let mut out: Vec<i32> = (0..size as i32).collect();
+            for (i, &(from, to)) in pairs.iter().enumerate() {
+                let end = pairs.get(i + 1).map_or(size as i32, |next| next.0);
+                for (offset, id) in (from..end).enumerate() {
+                    out[id as usize] = to + offset as i32;
+                }
+            }
+            out
+        }
+        // Changes
+        2 => {
+            let pairs = match (section.get_int_array("at"), section.get_int_array("val")) {
+                (Some(at), Some(val)) => at.iter().copied().zip(val.iter().copied()).collect(),
+                _ => at_value_pairs(section.get_byte_array("val").unwrap()),
+            };
+            let fill = section.get("nofill").is_none();
+            let size = size(0);
+            let mut out: Vec<i32> = if fill {
+                (0..size as i32).collect()
+            } else {
+                vec![-1; size]
+            };
+            for (at, value) in pairs {
+                out[at as usize] = value;
+            }
+            out
+        }
+        // Identity
+        3 => return None,
+        strategy => panic!("unknown blocks strategy {strategy} in {path}"),
+    })
+}
+
+/// 26.3 block id -> the version's block id per chain step. `None` when unchanged.
+fn block_id_tables() -> String {
+    let mut out = String::from("/* Generated by build.rs from the ViaBackwards mappings. */\n");
+    let mut composed: Option<Vec<i32>> = None;
+    for (version, file) in BLOCK_ID_CHAIN {
+        if let Some(step) = via_blocks(file) {
+            composed = Some(match composed {
+                None => step,
+                Some(prev) => prev
+                    .iter()
+                    .map(|&id| {
+                        usize::try_from(id)
+                            .ok()
+                            .and_then(|id| step.get(id).copied())
+                            .unwrap_or(-1)
+                    })
+                    .collect(),
+            });
+        }
+        match &composed {
+            Some(table) => {
+                let _ = writeln!(
+                    out,
+                    "static BLOCK_IDS_{version}: Option<&[i32]> = Some(&{table:?});"
+                );
+            }
+            None => {
+                let _ = writeln!(out, "static BLOCK_IDS_{version}: Option<&[i32]> = None;");
+            }
+        }
+    }
+    let _ = write!(
+        out,
+        "/// Block id tables by the version they map to, oldest first.\n\
+         static BLOCK_IDS: &[(pumpkin_util::version::JavaMinecraftVersion, Option<&[i32]>)] = &["
+    );
+    for (version, _) in BLOCK_ID_CHAIN.iter().rev() {
+        let _ = write!(
+            out,
+            "(pumpkin_util::version::JavaMinecraftVersion::{version}, BLOCK_IDS_{version}),"
+        );
+    }
+    let _ = writeln!(out, "];");
+    out
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=assets/datapacks");
@@ -412,4 +592,5 @@ fn main() {
         entity_data_tables(),
     )
     .unwrap();
+    fs::write(Path::new(&out_dir).join("block_id.rs"), block_id_tables()).unwrap();
 }

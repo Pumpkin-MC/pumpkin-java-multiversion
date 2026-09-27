@@ -144,6 +144,22 @@ pub fn id_remap(registry: &str, version: JavaMinecraftVersion, fallback: &str) -
     })
 }
 
+/// Like [`id_remap`], but entries the client lacks are `None` instead of a fallback.
+#[must_use]
+pub fn id_remap_or_drop(registry: &str, version: JavaMinecraftVersion) -> Option<Vec<Option<u32>>> {
+    let (_, client) = names_for(version)?.iter().find(|(id, _)| *id == registry)?;
+    let current = current_names(registry)?;
+    if current == *client {
+        return None;
+    }
+    Some(
+        current
+            .iter()
+            .map(|name| client.iter().position(|n| n == name).map(|i| i as u32))
+            .collect(),
+    )
+}
+
 /// REGISTRY_DATA: swaps 26.3's entries for the client version's vanilla ones.
 /// `None` when the client does not sync this registry and the packet must be dropped.
 // TODO: datapack damage types merged by core are lost; merge them into the version's list.
