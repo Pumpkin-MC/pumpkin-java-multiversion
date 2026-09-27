@@ -2,7 +2,7 @@
 //! SET_ENTITY_MOTION, PLAYER_ROTATION.
 
 use pumpkin_protocol::{
-    ClientPacket, MultiVersionJavaPacket,
+    ClientPacket,
     codec::lp_vector_3d::LpVector3d,
     java::client::play::{
         CEntityPositionSync, CEntityVelocity, CPlayerRotation, CUpdateEntityPos,
@@ -11,6 +11,8 @@ use pumpkin_protocol::{
     ser::NetworkReadExt,
 };
 use pumpkin_util::{math::vector3::Vector3, version::JavaMinecraftVersion};
+
+use crate::packet::mappings::clientbound::play::{ENTITY_POSITION_SYNC, TELEPORT_ENTITY};
 
 fn write(packet: &impl ClientPacket, version: JavaMinecraftVersion) -> Option<Vec<u8>> {
     let mut out = Vec::new();
@@ -91,10 +93,16 @@ pub fn position_sync_from_current(
         pitch,
         on_ground,
     );
-    Some((
-        CEntityPositionSync::to_id(version),
-        write(&packet, version)?,
-    ))
+    Some((position_sync_id(version), write(&packet, version)?))
+}
+
+/// The client's id of ENTITY_POSITION_SYNC, TELEPORT_ENTITY before 1.21.2. Core's ids are 26.3's.
+fn position_sync_id(version: JavaMinecraftVersion) -> i32 {
+    if version >= JavaMinecraftVersion::V_1_21_2 {
+        ENTITY_POSITION_SYNC.to_id(version)
+    } else {
+        TELEPORT_ENTITY.to_id(version)
+    }
 }
 
 /// SET_ENTITY_MOTION: packed velocity since 1.21.9, three shorts before. Core's writer handles
@@ -184,10 +192,7 @@ mod tests {
         );
         let current = write(&packet, CURRENT_MC_VERSION).unwrap();
         for version in VERSIONS {
-            let expected = (
-                CEntityPositionSync::to_id(version),
-                write(&packet, version).unwrap(),
-            );
+            let expected = (position_sync_id(version), write(&packet, version).unwrap());
             assert_eq!(
                 position_sync_from_current(&current, version),
                 Some(expected)

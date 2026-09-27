@@ -134,7 +134,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             add_entity_from_current(&current, version),
-            Some((CSpawnEntity::to_id(version), expected))
+            Some((
+                mappings::clientbound::play::ADD_ENTITY.to_id(version),
+                expected
+            ))
         );
     }
 }
