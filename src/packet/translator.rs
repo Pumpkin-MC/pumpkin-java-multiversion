@@ -601,6 +601,15 @@ impl PacketTranslator {
         if new_id == mappings::serverbound::play::INTERACT.current() {
             return serverbound::interact_to_current(raw_payload, version);
         }
+        // Dropped when unreadable: kept as is, the client's item ids would be stored
+        if new_id == mappings::serverbound::play::SET_CREATIVE_MODE_SLOT.current() {
+            return inventory::creative_slot_to_current(raw_payload, version)
+                .map(|payload| (new_id, payload));
+        }
+        if new_id == mappings::serverbound::play::CONTAINER_CLICK.current() {
+            return inventory::container_click_to_current(raw_payload, version)
+                .map(|payload| (new_id, payload));
+        }
         let translated_payload = serverbound::play_to_current(new_id, raw_payload, version)
             .unwrap_or_else(|| raw_payload.to_vec());
         Some((new_id, translated_payload))

@@ -60,6 +60,23 @@ fn payload_len(data: &[u8], tag_type: u8) -> Option<usize> {
     })
 }
 
+/// Skips one NBT of a client's item: a named root before 1.20.2, gzip with an i16 length in 1.7.
+pub fn skip_client_nbt(data: &mut &[u8], version: JavaMinecraftVersion) -> Option<()> {
+    if version < JavaMinecraftVersion::V_1_8 {
+        let len = i16::from_be_bytes(data.get(..2)?.try_into().ok()?);
+        *data = data.get(2 + usize::try_from(len).unwrap_or(0)..)?;
+        return Some(());
+    }
+    let tag_type = *data.first()?;
+    let mut at = 1;
+    if tag_type != 0 && NbtRoot::of(version) == NbtRoot::Named {
+        at += 2 + be_len(data, 1, 2)?;
+    }
+    at += payload_len(data.get(at..)?, tag_type)?;
+    *data = data.get(at..)?;
+    Some(())
+}
+
 /// Splits one 26.3 network NBT (type byte + nameless root) off `data`.
 pub fn split_network_nbt<'a>(data: &mut &'a [u8]) -> Option<&'a [u8]> {
     let tag_type = *data.first()?;

@@ -14,7 +14,10 @@ use crate::remap::{
     data_component_type_id_remap::remap_data_component_type_id_from_version,
     item_id_remap::remap_item_id_from_version,
 };
-use crate::translate::item::write_item_for_version;
+use crate::translate::{
+    item::{ItemFormat, write_item_for_version},
+    nbt::skip_client_nbt,
+};
 
 eras! {
     pub enum ContainerFormat {
@@ -40,10 +43,107 @@ eras! {
 
 eras! {
     pub enum ClientItemFormat {
-        // TODO: items from clients before 1.21.5 still carry their ids
-        Unsupported = V_1_7_2,
+        /// Items in the client's `ItemStack` layout, see [`ItemFormat`].
+        Legacy = V_1_7_2,
         /// Length-prefixed components in creative slots, hashed stacks in clicks; same as 26.3.
         V1_21_5 = V_1_21_5,
+    }
+}
+
+eras! {
+    pub enum ClickFormat {
+        /// Action number, byte click type, the clicked item instead of changed slots.
+        V1_7 = V_1_7_2,
+        /// Var int click type.
+        V1_9 = V_1_9,
+        /// Changed slots and carried item, no action number.
+        V1_17 = V_1_17,
+        /// State id.
+        V1_17_1 = V_1_17_1,
+    }
+}
+
+/// A stack from a client below 1.21.5, with the 26.3 item id.
+enum ClientItem {
+    Empty,
+    Stack { id: u16, count: i32 },
+}
+
+/// `None` when unreadable: components before 1.21.5 carry no length.
+// TODO: NBT and components are dropped; pre-1.13 damage values are ignored.
+fn read_legacy_item(read: &mut &[u8], version: JavaMinecraftVersion) -> Option<ClientItem> {
+    let format = ItemFormat::of(version);
+    let (id, count) = match format {
+        ItemFormat::V1_7 | ItemFormat::V1_13 => {
+            let Ok(id) = u16::try_from(read.get_i16_be().ok()?) else {
+                return Some(ClientItem::Empty);
+            };
+            let count = read.get_i8().ok()?;
+            if format == ItemFormat::V1_7 {
+                read.get_i16_be().ok()?; // damage
+            }
+            skip_client_nbt(read, version)?;
+            (id, i32::from(count))
+        }
+        ItemFormat::V1_13_2 => {
+            if !read.get_bool().ok()? {
+                return Some(ClientItem::Empty);
+            }
+            let id = u16::try_from(read.get_var_int().ok()?.0).ok()?;
+            let count = read.get_i8().ok()?;
+            skip_client_nbt(read, version)?;
+            (id, i32::from(count))
+        }
+        ItemFormat::V1_20_5 => {
+            let count = read.get_var_int().ok()?.0;
+            if count <= 0 {
+                return Some(ClientItem::Empty);
+            }
+            let id = u16::try_from(read.get_var_int().ok()?.0).ok()?;
+            let added = read.get_var_int().ok()?.0;
+            let removed = read.get_var_int().ok()?.0;
+            if added > 0 {
+                return None;
+            }
+            for _ in 0..removed {
+                read.get_var_int().ok()?;
+            }
+            (id, count)
+        }
+    };
+    if count <= 0 {
+        return Some(ClientItem::Empty);
+    }
+    Some(ClientItem::Stack {
+        id: remap_item_id_from_version(id, version),
+        count,
+    })
+}
+
+/// A legacy stack as 26.3's untrusted stack, without components.
+fn write_untrusted(item: &ClientItem, out: &mut Vec<u8>) -> Option<()> {
+    match *item {
+        ClientItem::Empty => out.write_var_int(&VarInt(0)).ok(),
+        ClientItem::Stack { id, count } => {
+            out.write_var_int(&VarInt(count)).ok()?;
+            out.write_var_int(&VarInt(i32::from(id))).ok()?;
+            out.write_var_int(&VarInt(0)).ok()?;
+            out.write_var_int(&VarInt(0)).ok()
+        }
+    }
+}
+
+/// A legacy stack as 26.3's hashed stack, without components.
+fn write_hashed(item: &ClientItem, out: &mut Vec<u8>) -> Option<()> {
+    match *item {
+        ClientItem::Empty => out.write_bool(false).ok(),
+        ClientItem::Stack { id, count } => {
+            out.write_bool(true).ok()?;
+            out.write_var_int(&VarInt(i32::from(id))).ok()?;
+            out.write_var_int(&VarInt(count)).ok()?;
+            out.write_var_int(&VarInt(0)).ok()?;
+            out.write_var_int(&VarInt(0)).ok()
+        }
     }
 }
 
@@ -256,27 +356,28 @@ fn hashed_item_to_current(
     Some(())
 }
 
-/// SET_CREATIVE_MODE_SLOT. `None` keeps the payload.
+/// SET_CREATIVE_MODE_SLOT. `None` drops it, so no item with the client's id gets stored.
 pub fn creative_slot_to_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    if ClientItemFormat::of(version) == ClientItemFormat::Unsupported {
-        return None;
-    }
     let mut out = Vec::new();
     out.write_i16_be(payload.get_i16_be().ok()?).ok()?;
-    untrusted_item_to_current(&mut payload, version, &mut out)?;
+    if ClientItemFormat::of(version) == ClientItemFormat::V1_21_5 {
+        untrusted_item_to_current(&mut payload, version, &mut out)?;
+    } else {
+        write_untrusted(&read_legacy_item(&mut payload, version)?, &mut out)?;
+    }
     Some(out)
 }
 
-/// CONTAINER_CLICK. `None` keeps the payload.
+/// CONTAINER_CLICK. `None` drops it.
 pub fn container_click_to_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    if ClientItemFormat::of(version) == ClientItemFormat::Unsupported {
-        return None;
+    if ClientItemFormat::of(version) == ClientItemFormat::Legacy {
+        return legacy_click_to_current(payload, version);
     }
     let mut out = Vec::new();
     out.write_var_int(&payload.get_var_int().ok()?).ok()?; // container
@@ -291,6 +392,61 @@ pub fn container_click_to_current(
         hashed_item_to_current(&mut payload, version, &mut out)?;
     }
     hashed_item_to_current(&mut payload, version, &mut out)?;
+    Some(out)
+}
+
+/// CONTAINER_CLICK before 1.21.5. The server replays the click itself; the stacks only sync it,
+/// so unreadable or missing ones are sent empty and the server corrects the client.
+fn legacy_click_to_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+    let format = ClickFormat::of(version);
+    let container = payload.get_container_id(&version).ok()?;
+    // A wrong state id makes the server resend the whole container
+    let state_id = if format >= ClickFormat::V1_17_1 {
+        payload.get_var_int().ok()?
+    } else {
+        VarInt(-1)
+    };
+    let slot = payload.get_i16_be().ok()?;
+    let button = payload.get_i8().ok()?;
+    if format < ClickFormat::V1_17 {
+        payload.get_i16_be().ok()?; // action number
+    }
+    let mode = if format >= ClickFormat::V1_9 {
+        payload.get_var_int().ok()?
+    } else {
+        VarInt(i32::from(payload.get_i8().ok()?))
+    };
+
+    let mut stacks = Vec::new();
+    let mut carried = ClientItem::Empty;
+    if format >= ClickFormat::V1_17 {
+        let read_stacks = |payload: &mut &[u8]| -> Option<(Vec<(i16, ClientItem)>, ClientItem)> {
+            let count = payload.get_var_int().ok()?.0;
+            let mut changed = Vec::new();
+            for _ in 0..count {
+                let slot = payload.get_i16_be().ok()?;
+                changed.push((slot, read_legacy_item(payload, version)?));
+            }
+            Some((changed, read_legacy_item(payload, version)?))
+        };
+        if let Some((changed, item)) = read_stacks(&mut payload) {
+            stacks = changed;
+            carried = item;
+        }
+    }
+
+    let mut out = Vec::new();
+    out.write_var_int(&container).ok()?;
+    out.write_var_int(&state_id).ok()?;
+    out.write_i16_be(slot).ok()?;
+    out.write_i8(button).ok()?;
+    out.write_var_int(&mode).ok()?;
+    out.write_var_int(&VarInt(stacks.len() as i32)).ok()?;
+    for (slot, item) in &stacks {
+        out.write_i16_be(*slot).ok()?;
+        write_hashed(item, &mut out)?;
+    }
+    write_hashed(&carried, &mut out)?;
     Some(out)
 }
 
@@ -339,5 +495,77 @@ mod tests {
             read.get_var_int().unwrap(),
             VarInt(i32::from(Item::DIRT.id))
         );
+    }
+
+    /// 26.3 untrusted stack: count, id, no components.
+    fn current_untrusted(count: u8, id: u16) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.write_var_int(&VarInt(i32::from(count))).unwrap();
+        out.write_var_int(&VarInt(i32::from(id))).unwrap();
+        out.extend_from_slice(&[0, 0]);
+        out
+    }
+
+    #[test]
+    fn legacy_creative_slot_gets_the_current_id() {
+        // 1.20: present, id, count, named NBT with a damage entry
+        let version = JavaMinecraftVersion::V_1_20;
+        let mut client = Vec::new();
+        client.write_i16_be(36).unwrap();
+        client.write_bool(true).unwrap();
+        client
+            .write_var_int(&VarInt(i32::from(remap_item_id_for_version(
+                Item::DIRT.id,
+                version,
+            ))))
+            .unwrap();
+        client.write_i8(2).unwrap();
+        client.extend_from_slice(&[
+            10, 0, 0, 3, 0, 6, b'D', b'a', b'm', b'a', b'g', b'e', 0, 0, 0, 1, 0,
+        ]);
+        let mut expected = vec![0, 36];
+        expected.extend(current_untrusted(2, Item::DIRT.id));
+        assert_eq!(creative_slot_to_current(&client, version), Some(expected));
+    }
+
+    #[test]
+    fn creative_slot_with_unsized_components_is_dropped() {
+        let version = JavaMinecraftVersion::V_1_21_4;
+        let dirt = remap_item_id_for_version(Item::DIRT.id, version);
+        let mut plain = vec![0, 36];
+        plain.extend(current_untrusted(1, dirt));
+        let mut expected = vec![0, 36];
+        expected.extend(current_untrusted(1, Item::DIRT.id));
+        assert_eq!(creative_slot_to_current(&plain, version), Some(expected));
+
+        // One added component, whose data has no length before 1.21.5
+        let mut patched = vec![0, 36, 1];
+        patched.write_var_int(&VarInt(i32::from(dirt))).unwrap();
+        patched.extend_from_slice(&[1, 0, 1, 5]);
+        assert_eq!(creative_slot_to_current(&patched, version), None);
+    }
+
+    #[test]
+    fn legacy_clicks_become_26_3_clicks() {
+        let version = JavaMinecraftVersion::V_1_21_4;
+        let dirt = remap_item_id_for_version(Item::DIRT.id, version);
+        // container, state id, slot, button, click type, one changed slot, carried
+        let mut client = vec![0, 7, 0, 36, 0, 0, 1, 0, 36];
+        client.extend(current_untrusted(1, dirt));
+        client.push(0);
+        let mut expected = vec![0, 7, 0, 36, 0, 0, 1, 0, 36, 1];
+        expected
+            .write_var_int(&VarInt(i32::from(Item::DIRT.id)))
+            .unwrap();
+        expected.extend_from_slice(&[1, 0, 0, 0]);
+        assert_eq!(container_click_to_current(&client, version), Some(expected));
+
+        // 1.16: action number, the clicked item and no state id
+        let version = JavaMinecraftVersion::V_1_16;
+        let client = [1, 0, 36, 0, 0, 5, 0, 0];
+        let mut expected = vec![1];
+        expected.write_var_int(&VarInt(-1)).unwrap();
+        expected.extend_from_slice(&[0, 36, 0, 0, 0, 0]);
+        assert_eq!(container_click_to_current(&client, version), Some(expected));
     }
 }
