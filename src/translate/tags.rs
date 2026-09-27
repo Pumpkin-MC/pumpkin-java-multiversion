@@ -1,5 +1,8 @@
 //! UPDATE_TAGS.
 
+use std::{cell::OnceCell, collections::HashMap};
+
+use pumpkin_data::{Block, BlockId};
 use pumpkin_protocol::{
     VarInt,
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},
@@ -10,27 +13,74 @@ use crate::remap::{
     entity_id_remap::remap_entity_id_for_version, item_id_remap::remap_item_id_for_version,
 };
 use crate::tag::RegistryKey;
-use crate::translate::registry::id_remap_or_drop;
+use crate::translate::{block::remap_state, registry::id_remap_or_drop};
 
 include!(concat!(env!("OUT_DIR"), "/block_id.rs"));
 
-/// 26.3 block id as the client's. `None` when the client has no such block.
-fn remap_block_id(id: u32, version: JavaMinecraftVersion) -> Option<u32> {
-    let (_, table) = BLOCK_IDS
-        .iter()
-        .rev()
-        .find(|(start, _)| version >= *start)?;
-    match table {
-        None => Some(id),
-        Some(table) => table
-            .get(id as usize)
-            .and_then(|&id| u32::try_from(id).ok()),
+/// 26.3 block ids as the client's. Blocks the client lacks become the block their default
+/// state is shown as, like Via's block state substitutes.
+struct BlockIds {
+    version: JavaMinecraftVersion,
+    /// Via's block id table for the client; `None` when the ids are unchanged.
+    table: Option<&'static [i32]>,
+    /// Client state to client block, from the blocks both versions have. Built on first use.
+    state_owner: OnceCell<HashMap<u32, u32>>,
+}
+
+impl BlockIds {
+    /// `None` before 1.13, which has no block tags.
+    fn new(version: JavaMinecraftVersion) -> Option<Self> {
+        let (_, table) = BLOCK_IDS
+            .iter()
+            .rev()
+            .find(|(start, _)| version >= *start)?;
+        Some(Self {
+            version,
+            table: *table,
+            state_owner: OnceCell::new(),
+        })
+    }
+
+    fn mapped(&self, id: u16) -> Option<u32> {
+        match self.table {
+            None => Some(u32::from(id)),
+            Some(table) => table
+                .get(usize::from(id))
+                .and_then(|&id| u32::try_from(id).ok()),
+        }
+    }
+
+    fn get(&self, id: u32) -> Option<u32> {
+        let id = u16::try_from(id).ok()?;
+        if let Some(mapped) = self.mapped(id) {
+            return Some(mapped);
+        }
+        let block = Block::from_id(BlockId::new(id)?);
+        let state = remap_state(u32::from(block.default_state.id.as_u16()), self.version);
+        self.state_owner
+            .get_or_init(|| {
+                let mut owner = HashMap::new();
+                for id in 0..BlockId::COUNT {
+                    let (Some(block_id), Some(client_block)) = (BlockId::new(id), self.mapped(id))
+                    else {
+                        continue;
+                    };
+                    for state in Block::from_id(block_id).states {
+                        owner
+                            .entry(remap_state(u32::from(state.id.as_u16()), self.version))
+                            .or_insert(client_block);
+                    }
+                }
+                owner
+            })
+            .get(&state)
+            .copied()
     }
 }
 
 /// How a registry's 26.3 ids become the client's.
 enum IdMap {
-    Block,
+    Block(Option<BlockIds>),
     Item,
     EntityType,
     /// Synced registry, by entry name.
@@ -42,7 +92,7 @@ enum IdMap {
 impl IdMap {
     fn new(key: RegistryKey, version: JavaMinecraftVersion) -> Self {
         match key {
-            RegistryKey::Block => Self::Block,
+            RegistryKey::Block => Self::Block(BlockIds::new(version)),
             RegistryKey::Item => Self::Item,
             RegistryKey::EntityType => Self::EntityType,
             _ => id_remap_or_drop(key.identifier_string(), version)
@@ -52,7 +102,7 @@ impl IdMap {
 
     fn get(&self, id: u32, version: JavaMinecraftVersion) -> Option<u32> {
         match self {
-            Self::Block => remap_block_id(id, version),
+            Self::Block(blocks) => blocks.as_ref()?.get(id),
             // Unmapped items become air, which no tag holds
             Self::Item => {
                 Some(u32::from(remap_item_id_for_version(id as u16, version))).filter(|&id| id != 0)
@@ -64,8 +114,9 @@ impl IdMap {
     }
 }
 
-/// Keeps the registries the client knows, with the entries as the client's ids. Entries the
-/// client lacks are dropped (ViaBackwards `TagRewriter`).
+/// Keeps the registries the client knows, with the entries as the client's ids (ViaBackwards
+/// `TagRewriter`). Blocks the client lacks become their substitute, other missing entries are
+/// dropped.
 pub fn update_tags_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
