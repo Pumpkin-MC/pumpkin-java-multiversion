@@ -2,7 +2,7 @@
 
 use std::{cell::OnceCell, collections::HashMap};
 
-use pumpkin_data::{Block, BlockId};
+use pumpkin_data::{Block, BlockId, entity::EntityType, item::Item};
 use pumpkin_protocol::{
     VarInt,
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},
@@ -13,7 +13,10 @@ use crate::remap::{
     entity_id_remap::remap_entity_id_for_version, item_id_remap::remap_item_id_for_version,
 };
 use crate::tag::RegistryKey;
-use crate::translate::{block::remap_state, registry::id_remap_or_drop};
+use crate::translate::{
+    block::remap_state,
+    registry::{current_names, id_remap_or_drop, missing_tags},
+};
 
 include!(concat!(env!("OUT_DIR"), "/block_id.rs"));
 
@@ -100,6 +103,21 @@ impl IdMap {
         }
     }
 
+    /// 26.3 id of an entry name, for the tags 26.3 no longer has.
+    fn current_id(key: RegistryKey, name: &str) -> Option<u32> {
+        match key {
+            RegistryKey::Block => Block::from_name(name).map(|block| u32::from(block.id.as_u16())),
+            RegistryKey::Item => Item::from_registry_key(name).map(|item| u32::from(item.id)),
+            RegistryKey::EntityType => {
+                EntityType::from_name(name).map(|entity| u32::from(entity.id))
+            }
+            _ => current_names(key.identifier_string())?
+                .iter()
+                .position(|n| *n == name)
+                .map(|i| i as u32),
+        }
+    }
+
     fn get(&self, id: u32, version: JavaMinecraftVersion) -> Option<u32> {
         match self {
             Self::Block(blocks) => blocks.as_ref()?.get(id),
@@ -116,7 +134,7 @@ impl IdMap {
 
 /// Keeps the registries the client knows, with the entries as the client's ids (ViaBackwards
 /// `TagRewriter`). Blocks the client lacks become their substitute, other missing entries are
-/// dropped.
+/// dropped. Tags of the client's version that 26.3 no longer has are added back.
 pub fn update_tags_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
@@ -128,22 +146,35 @@ pub fn update_tags_from_current(
         let name = payload.get_str_borrowed().ok()?;
         let key = RegistryKey::from_string(name.strip_prefix("minecraft:").unwrap_or(name))
             .filter(|key| key.is_valid_for_version(version));
-        let ids = key.map(|key| IdMap::new(key, version));
-        if key.is_some() {
-            kept += 1;
-            body.write_string(name).ok()?;
-        }
-
-        let tag_count = payload.get_var_int().ok()?;
-        if key.is_some() {
-            body.write_var_int(&tag_count).ok()?;
-        }
-        for _ in 0..tag_count.0 {
+        let mut tags = Vec::new();
+        let tag_count = payload.get_var_int().ok()?.0;
+        for _ in 0..tag_count {
             let tag = payload.get_str_borrowed().ok()?;
             let entries = payload
                 .get_list(|read| Ok(read.get_var_int()?.0 as u32))
                 .ok()?;
-            let Some(ids) = &ids else { continue };
+            tags.push((tag, entries));
+        }
+        let Some(key) = key else { continue };
+
+        let ids = IdMap::new(key, version);
+        let registry = key.identifier_string();
+        let missing = missing_tags(version)
+            .iter()
+            .filter(|(missing_registry, _, _)| *missing_registry == registry)
+            .map(|(_, tag, names)| {
+                let entries = names
+                    .iter()
+                    .filter_map(|name| IdMap::current_id(key, name))
+                    .collect();
+                (*tag, entries)
+            });
+        let tags: Vec<_> = tags.into_iter().chain(missing).collect();
+
+        kept += 1;
+        body.write_string(name).ok()?;
+        body.write_var_int(&VarInt(tags.len() as i32)).ok()?;
+        for (tag, entries) in tags {
             let entries: Vec<_> = entries
                 .into_iter()
                 .filter_map(|id| ids.get(id, version))

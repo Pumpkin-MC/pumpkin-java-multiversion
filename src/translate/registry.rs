@@ -144,6 +144,28 @@ pub fn id_remap(registry: &str, version: JavaMinecraftVersion, fallback: &str) -
     })
 }
 
+/// Tags of the client's datapack that 26.3 no longer has, as `(registry, tag, entry names)`.
+#[must_use]
+pub fn missing_tags(
+    version: JavaMinecraftVersion,
+) -> &'static [(&'static str, &'static str, &'static [&'static str])] {
+    use DatapackVersion as D;
+    match DatapackVersion::of(version) {
+        D::V1_20_2 => MISSING_TAGS_1_20_2,
+        D::V1_21 => MISSING_TAGS_1_21,
+        D::V1_21_2 => MISSING_TAGS_1_21_2,
+        D::V1_21_4 => MISSING_TAGS_1_21_4,
+        D::V1_21_5 => MISSING_TAGS_1_21_5,
+        D::V1_21_6 => MISSING_TAGS_1_21_6,
+        D::V1_21_7 => MISSING_TAGS_1_21_7,
+        D::V1_21_9 => MISSING_TAGS_1_21_9,
+        D::V1_21_11 => MISSING_TAGS_1_21_11,
+        D::V26_1 => MISSING_TAGS_26_1,
+        D::V26_2 => MISSING_TAGS_26_2,
+        _ => &[],
+    }
+}
+
 /// Like [`id_remap`], but entries the client lacks are `None` instead of a fallback.
 #[must_use]
 pub fn id_remap_or_drop(registry: &str, version: JavaMinecraftVersion) -> Option<Vec<Option<u32>>> {

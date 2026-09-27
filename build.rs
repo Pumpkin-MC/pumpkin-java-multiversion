@@ -506,6 +506,119 @@ fn block_id_tables() -> String {
     out
 }
 
+/// Datapack folders of the configuration state versions, whose tags the translator completes.
+const TAG_VERSIONS: &[&str] = &[
+    "1_20_2", "1_21", "1_21_2", "1_21_4", "1_21_5", "1_21_6", "1_21_7", "1_21_9", "1_21_11",
+    "26_1", "26_2",
+];
+
+/// `(registry, tag)` to its raw values
+fn load_tags(folder: &str) -> HashMap<(String, String), Vec<String>> {
+    fn walk(dir: &Path, rel: &str, out: &mut HashMap<(String, String), Vec<String>>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let rel = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
+            if path.is_dir() {
+                walk(&path, &rel, out);
+            } else if let Some(rel) = rel.strip_suffix(".json") {
+                // worldgen registries take two segments, e.g. `worldgen/biome`
+                let segments = if rel.starts_with("worldgen/") { 2 } else { 1 };
+                let mut parts = rel.splitn(segments + 1, '/');
+                let registry: Vec<_> = parts.by_ref().take(segments).collect();
+                let Some(tag) = parts.next() else { continue };
+                let json: Value =
+                    serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+                let values = json["values"]
+                    .as_array()
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(|v| v.as_str().or_else(|| v["id"].as_str()))
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                out.insert((registry.join("/"), tag.to_string()), values);
+            }
+        }
+    }
+    let mut out = HashMap::new();
+    walk(
+        &Path::new("assets/datapacks")
+            .join(folder)
+            .join("data/minecraft/tags"),
+        "",
+        &mut out,
+    );
+    out
+}
+
+/// Entry names of a tag with nested `#tag` references resolved.
+fn resolve_tag(
+    tags: &HashMap<(String, String), Vec<String>>,
+    registry: &str,
+    tag: &str,
+    seen: &mut Vec<String>,
+    out: &mut Vec<String>,
+) {
+    if seen.iter().any(|t| t == tag) {
+        return;
+    }
+    seen.push(tag.to_string());
+    for value in tags
+        .get(&(registry.to_string(), tag.to_string()))
+        .into_iter()
+        .flatten()
+    {
+        if let Some(nested) = value.strip_prefix('#') {
+            let nested = nested.strip_prefix("minecraft:").unwrap_or(nested);
+            resolve_tag(tags, registry, nested, seen, out);
+        } else {
+            let name = value
+                .strip_prefix("minecraft:")
+                .unwrap_or(value)
+                .to_string();
+            if !out.contains(&name) {
+                out.push(name);
+            }
+        }
+    }
+}
+
+/// Per version, the tags 26.3 no longer has, with resolved entry names.
+fn missing_tag_tables() -> String {
+    let current = load_tags("26_3");
+    let mut out = String::new();
+    for folder in TAG_VERSIONS {
+        let tags = load_tags(folder);
+        let mut missing: Vec<_> = tags
+            .keys()
+            .filter(|key| !current.contains_key(*key))
+            .collect();
+        missing.sort();
+        let _ = write!(
+            out,
+            "pub static MISSING_TAGS_{}: &[(&str, &str, &[&str])] = &[",
+            folder.to_uppercase()
+        );
+        for (registry, tag) in missing {
+            let mut entries = Vec::new();
+            resolve_tag(&tags, registry, tag, &mut Vec::new(), &mut entries);
+            let _ = write!(out, "({registry:?}, \"minecraft:{tag}\", &{entries:?}),");
+        }
+        let _ = writeln!(out, "];");
+    }
+    out
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=assets/datapacks");
@@ -578,6 +691,7 @@ fn main() {
         let _ = writeln!(out, "static B{id}: &[u8] = {};", byte_literal(blob));
     }
     out.push_str(&tables);
+    out.push_str(&missing_tag_tables());
     let _ = writeln!(
         out,
         "pub static CODEC_{}: &[u8] = {};",
