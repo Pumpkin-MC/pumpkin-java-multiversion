@@ -55,6 +55,7 @@ pub mod movement;
 pub mod nbt;
 pub mod palette;
 pub mod particle;
+pub mod player_info;
 pub mod player_spawn;
 pub mod plugin_message;
 pub mod recipe;

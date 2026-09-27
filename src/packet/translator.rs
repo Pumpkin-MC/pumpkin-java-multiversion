@@ -7,8 +7,9 @@ use crate::packet::mappings::{self, PacketId};
 use crate::remap;
 use crate::translate::{
     advancement, animation, attribute, block, chunk, commands, entity, entity_data, explosion,
-    game_event, inventory, light, login, movement, particle, player_spawn, plugin_message, recipe,
-    reencode_current, registry, resource_pack, serverbound, sound, tags, team, time,
+    game_event, inventory, light, login, movement, particle, player_info, player_spawn,
+    plugin_message, recipe, reencode_current, registry, resource_pack, serverbound, sound, tags,
+    team, time,
 };
 
 type PayloadTranslator = fn(&[u8], JavaMinecraftVersion) -> Option<Vec<u8>>;
@@ -792,6 +793,9 @@ impl PacketTranslator {
             id if id == play::LEVEL_CHUNK_WITH_LIGHT.current() => chunk::chunk_from_current,
             id if id == play::LIGHT_UPDATE.current() => light::light_update_from_current,
             id if id == play::SET_PLAYER_TEAM.current() => team::set_player_team_from_current,
+            id if id == play::PLAYER_INFO_UPDATE.current() => {
+                player_info::player_info_update_from_current
+            }
             id if id == play::MOVE_ENTITY_POS.current() => movement::pos_from_current,
             id if id == play::MOVE_ENTITY_POS_ROT.current() => movement::pos_rot_from_current,
             id if id == play::MOVE_ENTITY_ROT.current() => movement::rot_from_current,
