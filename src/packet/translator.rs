@@ -782,6 +782,7 @@ impl PacketTranslator {
             id if id == play::MOVE_ENTITY_POS.current() => movement::pos_from_current,
             id if id == play::MOVE_ENTITY_POS_ROT.current() => movement::pos_rot_from_current,
             id if id == play::MOVE_ENTITY_ROT.current() => movement::rot_from_current,
+            id if id == play::SET_ENTITY_MOTION.current() => movement::entity_motion_from_current,
             id if id == play::ANIMATE.current() => animation::animate_from_current,
             id if id == play::SET_TIME.current() => time::set_time_from_current,
             id if id == play::RECIPE_BOOK_ADD.current() => recipe::recipe_book_add_from_current,

@@ -1,9 +1,12 @@
-//! Entity movement: MOVE_ENTITY_POS, MOVE_ENTITY_POS_ROT, MOVE_ENTITY_ROT, ENTITY_POSITION_SYNC.
+//! Entity movement: MOVE_ENTITY_POS, MOVE_ENTITY_POS_ROT, MOVE_ENTITY_ROT, ENTITY_POSITION_SYNC,
+//! SET_ENTITY_MOTION.
 
 use pumpkin_protocol::{
     ClientPacket, MultiVersionJavaPacket,
+    codec::lp_vector_3d::LpVector3d,
     java::client::play::{
-        CEntityPositionSync, CUpdateEntityPos, CUpdateEntityPosRot, CUpdateEntityRot,
+        CEntityPositionSync, CEntityVelocity, CUpdateEntityPos, CUpdateEntityPosRot,
+        CUpdateEntityRot,
     },
     ser::NetworkReadExt,
 };
@@ -94,6 +97,17 @@ pub fn position_sync_from_current(
     ))
 }
 
+/// SET_ENTITY_MOTION: packed velocity since 1.21.9, three shorts before. Core's writer handles
+/// every older layout.
+pub fn entity_motion_from_current(
+    mut payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<Vec<u8>> {
+    let entity_id = payload.get_var_int().ok()?;
+    let LpVector3d(velocity) = LpVector3d::read(&mut payload).ok()?;
+    write(&CEntityVelocity::new(entity_id, velocity), version)
+}
+
 #[cfg(test)]
 mod tests {
     use pumpkin_data::packet::CURRENT_MC_VERSION;
@@ -159,6 +173,24 @@ mod tests {
             );
             assert_eq!(
                 position_sync_from_current(&current, version),
+                Some(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn entity_motion_uses_shorts_before_1_21_9() {
+        for velocity in [Vector3::new(0.5, -0.25, 0.0), Vector3::new(0.0, 0.0, 0.0)] {
+            let packet = CEntityVelocity::new(VarInt(7), velocity);
+            let mut current = Vec::new();
+            packet
+                .write_packet_data(&mut current, &CURRENT_MC_VERSION)
+                .unwrap();
+            let version = JavaMinecraftVersion::V_1_21_7;
+            let mut expected = Vec::new();
+            packet.write_packet_data(&mut expected, &version).unwrap();
+            assert_eq!(
+                entity_motion_from_current(&current, version),
                 Some(expected)
             );
         }
