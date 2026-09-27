@@ -1,12 +1,12 @@
 //! Entity movement: MOVE_ENTITY_POS, MOVE_ENTITY_POS_ROT, MOVE_ENTITY_ROT, ENTITY_POSITION_SYNC,
-//! SET_ENTITY_MOTION.
+//! SET_ENTITY_MOTION, PLAYER_ROTATION.
 
 use pumpkin_protocol::{
     ClientPacket, MultiVersionJavaPacket,
     codec::lp_vector_3d::LpVector3d,
     java::client::play::{
-        CEntityPositionSync, CEntityVelocity, CUpdateEntityPos, CUpdateEntityPosRot,
-        CUpdateEntityRot,
+        CEntityPositionSync, CEntityVelocity, CPlayerRotation, CUpdateEntityPos,
+        CUpdateEntityPosRot, CUpdateEntityRot,
     },
     ser::NetworkReadExt,
 };
@@ -106,6 +106,23 @@ pub fn entity_motion_from_current(
     let entity_id = payload.get_var_int().ok()?;
     let LpVector3d(velocity) = LpVector3d::read(&mut payload).ok()?;
     write(&CEntityVelocity::new(entity_id, velocity), version)
+}
+
+/// PLAYER_ROTATION: each angle got a relative flag in 1.21.9.
+// TODO: relative rotations need the player's rotation (ViaBackwards `PlayerRotationStorage`);
+// they are dropped. Core itself only sends absolute ones.
+pub fn player_rotation_from_current(
+    mut payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<Vec<u8>> {
+    let yaw = payload.get_f32_be().ok()?;
+    let relative_yaw = payload.get_bool().ok()?;
+    let pitch = payload.get_f32_be().ok()?;
+    let relative_pitch = payload.get_bool().ok()?;
+    if relative_yaw || relative_pitch {
+        return None;
+    }
+    write(&CPlayerRotation { yaw, pitch }, version)
 }
 
 #[cfg(test)]

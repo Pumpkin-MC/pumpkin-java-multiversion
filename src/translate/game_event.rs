@@ -8,7 +8,7 @@ eras! {
         /// No `START_WAITING_CHUNKS`.
         V1_7 = V_1_7_2,
         /// Same as 26.3.
-        V1_20_2 = V_1_20_2,
+        V1_20_3 = V_1_20_3,
     }
 }
 
@@ -39,14 +39,14 @@ mod tests {
     }
 
     #[test]
-    fn start_waiting_chunks_only_reaches_1_20_2_and_later() {
+    fn start_waiting_chunks_only_reaches_1_20_3_and_later() {
         let waiting = payload(GameEvent::StartWaitingChunks);
         assert_eq!(
-            game_event_from_current(&waiting, JavaMinecraftVersion::V_1_20),
+            game_event_from_current(&waiting, JavaMinecraftVersion::V_1_20_2),
             None
         );
         assert_eq!(
-            game_event_from_current(&waiting, JavaMinecraftVersion::V_1_20_2),
+            game_event_from_current(&waiting, JavaMinecraftVersion::V_1_20_3),
             Some(waiting.clone())
         );
 

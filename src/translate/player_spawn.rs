@@ -1,10 +1,10 @@
-//! Player spawn info: play LOGIN and RESPAWN.
+//! Player spawn info: play LOGIN, RESPAWN and SET_DEFAULT_SPAWN_POSITION.
 
 use pumpkin_data::{entity::EntityType, packet::CURRENT_MC_VERSION};
 use pumpkin_protocol::{
     ClientPacket,
-    java::client::play::{CLogin, CRespawn, PlayerSpawnData},
-    ser::NetworkReadExt,
+    java::client::play::{CLogin, CPlayerSpawnPosition, CRespawn, PlayerSpawnData},
+    ser::{NetworkReadExt, NetworkReadSliceExt},
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
@@ -54,6 +54,23 @@ pub fn respawn_from_current(payload: &[u8], version: JavaMinecraftVersion) -> Op
     reencode_current::<CRespawn>(payload, version)
 }
 
+/// SET_DEFAULT_SPAWN_POSITION: dimension and pitch since 1.21.9, angle since 1.17, packed
+/// position since 1.14 (ViaBackwards). Core's writer handles every older layout.
+pub fn spawn_position_from_current(
+    mut payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<Vec<u8>> {
+    let dimension = payload.get_str_borrowed().ok()?.to_string();
+    let location = payload.get_block_pos(&CURRENT_MC_VERSION).ok()?;
+    let yaw = payload.get_f32_be().ok()?;
+    let pitch = payload.get_f32_be().ok()?;
+    let mut out = Vec::new();
+    CPlayerSpawnPosition::new(location, yaw, pitch, dimension)
+        .write_packet_data(&mut out, &version)
+        .ok()?;
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use pumpkin_protocol::VarInt;
@@ -97,5 +114,35 @@ mod tests {
             .unwrap();
         let out = login_from_current(&payload, JavaMinecraftVersion::V_1_21_11).unwrap();
         assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn spawn_position_matches_each_older_layout() {
+        use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
+
+        let packet = || {
+            CPlayerSpawnPosition::new(
+                BlockPos(Vector3::new(12, 70, -5)),
+                90.0,
+                10.0,
+                "minecraft:overworld".to_string(),
+            )
+        };
+        let mut current = Vec::new();
+        packet()
+            .write_packet_data(&mut current, &CURRENT_MC_VERSION)
+            .unwrap();
+        for version in [
+            JavaMinecraftVersion::V_1_21_7,
+            JavaMinecraftVersion::V_1_16,
+            JavaMinecraftVersion::V_1_8,
+        ] {
+            let mut expected = Vec::new();
+            packet().write_packet_data(&mut expected, &version).unwrap();
+            assert_eq!(
+                spawn_position_from_current(&current, version),
+                Some(expected)
+            );
+        }
     }
 }
