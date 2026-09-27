@@ -1,4 +1,5 @@
-//! Block states and block entity types: BLOCK_UPDATE, SECTION_BLOCKS_UPDATE, chunk palettes.
+//! Block states and block entity types: BLOCK_UPDATE, SECTION_BLOCKS_UPDATE, BLOCK_ENTITY_DATA,
+//! chunk palettes.
 
 use std::sync::{Mutex, PoisonError};
 
@@ -9,7 +10,10 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
-use super::ceil_log2;
+use super::{
+    ceil_log2,
+    nbt::{split_network_nbt, write_network_nbt},
+};
 use crate::remap::{
     block_entity_type_id_remap::remap_block_entity_type_id_for_version,
     block_state_remap::remap_block_state_for_version,
@@ -54,6 +58,36 @@ pub fn block_update_from_current(
     out.write_i64_be(position).ok()?;
     out.write_var_int(&VarInt(remap_state(state, version) as i32))
         .ok()?;
+    Some(out)
+}
+
+eras! {
+    pub enum BlockEntityDataFormat {
+        // TODO: a byte action per type before 1.18; dropped until then
+        Action = V_1_7_2,
+        /// Type id.
+        V1_18 = V_1_18,
+    }
+}
+
+/// BLOCK_ENTITY_DATA: position, type, NBT. Types the client lacks are dropped.
+pub fn block_entity_data_from_current(
+    mut payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<Vec<u8>> {
+    if BlockEntityDataFormat::of(version) == BlockEntityDataFormat::Action {
+        return None;
+    }
+    let position = payload.get_i64_be().ok()?;
+    let kind = payload.get_var_int().ok()?.0 as u32;
+    let client_kind = remap_block_entity_type(kind, version);
+    if client_kind == 0 && kind != 0 {
+        return None;
+    }
+    let mut out = Vec::new();
+    out.write_i64_be(position).ok()?;
+    out.write_var_int(&VarInt(client_kind as i32)).ok()?;
+    write_network_nbt(split_network_nbt(&mut payload)?, version, &mut out);
     Some(out)
 }
 

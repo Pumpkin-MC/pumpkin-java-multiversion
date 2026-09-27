@@ -810,6 +810,7 @@ impl PacketTranslator {
             }
             id if id == play::UPDATE_RECIPES.current() => recipe::update_recipes_from_current,
             id if id == play::BLOCK_UPDATE.current() => block::block_update_from_current,
+            id if id == play::BLOCK_ENTITY_DATA.current() => block::block_entity_data_from_current,
             id if id == play::SECTION_BLOCKS_UPDATE.current() => {
                 block::section_blocks_update_from_current
             }
