@@ -48,7 +48,6 @@ impl LegacyWrite for CRespawn {
         if !v1_20_2 {
             if v1_16_2 && *version < JavaMinecraftVersion::V_1_19 {
                 let dim_type_compound = crate::legacy::login::get_dimension_type_nbt(
-                    *version,
                     self.player_spawn_info.dimension.minecraft_name,
                 );
                 let dim_bytes = pumpkin_nbt::Nbt::new(String::new(), dim_type_compound).write();

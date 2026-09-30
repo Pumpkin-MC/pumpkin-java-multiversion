@@ -1,6 +1,5 @@
 //! COMMANDS.
 
-use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
     VarInt,
     java::client::play::{ArgumentType, StringProtoArgBehavior},
@@ -45,7 +44,7 @@ enum Properties {
 
 fn properties(id: u32) -> Properties {
     let id = id as i32;
-    let of = |argument: ArgumentType| argument.to_id(&CURRENT_MC_VERSION);
+    let of = |argument: ArgumentType| argument.to_id();
     let resource = || Identifier::vanilla_static("");
     if id
         == of(ArgumentType::Float {
@@ -182,6 +181,7 @@ pub fn commands_from_current(mut payload: &[u8], version: JavaMinecraftVersion) 
 #[cfg(test)]
 mod tests {
     use crate::legacy::LegacyWrite;
+    use pumpkin_data::packet::CURRENT_MC_VERSION;
     use pumpkin_protocol::{
         ClientPacket,
         java::client::play::{CCommands, ProtoNode, ProtoNodeType},

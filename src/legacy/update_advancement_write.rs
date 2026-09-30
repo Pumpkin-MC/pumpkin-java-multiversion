@@ -2,7 +2,6 @@
 //! Pre-26.3 encoding from `pumpkin-protocol`'s `java/client/play/update_advancement.rs`, as a
 //! test reference for 1.20.5 and later (older item layouts are not reproduced).
 
-use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
     VarInt,
     codec::item_stack_seralizer::{ItemStackSerializer, ItemStackTemplateSerializer},
@@ -40,11 +39,10 @@ impl LegacyWrite for CUpdateAdvancements {
                 // Item icon
                 // Before 26.1 the icon was a full stack; from 1.20.5 on its layout is core's.
                 if *version < JavaMinecraftVersion::V_26_1 {
-                    ItemStackSerializer::from(display.item_icon.clone())
-                        .write_with_version(&mut write, &CURRENT_MC_VERSION)?;
+                    ItemStackSerializer::from(display.item_icon.clone()).write(&mut write)?;
                 } else {
                     ItemStackTemplateSerializer::from(display.item_icon.clone())
-                        .write_with_version(&mut write, &CURRENT_MC_VERSION)?;
+                        .write(&mut write)?;
                 }
 
                 write.write_var_int(&VarInt(display.frame_type as i32))?;

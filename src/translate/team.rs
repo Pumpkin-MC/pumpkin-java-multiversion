@@ -1,7 +1,6 @@
 //! SET_PLAYER_TEAM.
 
 use crate::legacy::LegacyWrite;
-use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
     java::client::play::{CSetPlayerTeam, TeamMethod, TeamParameters},
     ser::{NetworkReadExt, NetworkReadSliceExt},
@@ -43,15 +42,14 @@ pub fn set_player_team_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let current = CURRENT_MC_VERSION;
     let team_name = payload.get_str_borrowed().ok()?.to_string();
     let method = method(payload.get_i8().ok()?)?;
 
     let has_parameters = matches!(method, TeamMethod::Create | TeamMethod::Update);
     let components = if has_parameters {
-        let display_name = payload.get_component(&current).ok()?;
-        let prefix = payload.get_component(&current).ok()?;
-        let suffix = payload.get_component(&current).ok()?;
+        let display_name = payload.get_component().ok()?;
+        let prefix = payload.get_component().ok()?;
+        let suffix = payload.get_component().ok()?;
         Some((display_name, prefix, suffix))
     } else {
         None
@@ -109,6 +107,7 @@ pub fn set_player_team_from_current(
 #[cfg(test)]
 mod tests {
     use crate::legacy::LegacyWrite;
+    use pumpkin_data::packet::CURRENT_MC_VERSION;
     use pumpkin_protocol::ClientPacket;
     use pumpkin_util::text::TextComponent;
 

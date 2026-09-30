@@ -167,7 +167,7 @@ impl LegacyArgumentType for ArgumentType {
         version: &JavaMinecraftVersion,
     ) -> Result<(), WritingError> {
         if *version >= JavaMinecraftVersion::V_1_19 {
-            let id = self.to_id(version);
+            let id = self.to_id();
             write.write_var_int(&(id).into())?;
             if id == 5 {
                 let behavior_val = match self {

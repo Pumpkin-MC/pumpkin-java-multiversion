@@ -57,7 +57,7 @@ impl LegacyWrite for CLogin<'_> {
                 if v1_16_2 && *version < JavaMinecraftVersion::V_1_19 {
                     // In 1.16.2 - 1.18.2, this field is the dimension type NBT Compound!
                     let dim_type_compound =
-                        get_dimension_type_nbt(*version, self.spawn_data.dimension.minecraft_name);
+                        get_dimension_type_nbt(self.spawn_data.dimension.minecraft_name);
                     let dim_bytes = pumpkin_nbt::Nbt::new(String::new(), dim_type_compound).write();
                     write.write_all(&dim_bytes)?;
                 } else {
@@ -186,7 +186,7 @@ pub fn build_v1_20_registry_codec(
     use std::io::Cursor;
 
     let mut root = NbtCompound::new();
-    let synced = pumpkin_data::registry::Registry::get_synced(version);
+    let synced = pumpkin_data::registry::Registry::get_synced();
 
     if version < JavaMinecraftVersion::V_1_16_2 {
         for reg in synced {
@@ -267,10 +267,7 @@ pub fn build_v1_20_registry_codec(
 }
 
 #[must_use]
-pub fn get_dimension_type_nbt(
-    version: JavaMinecraftVersion,
-    dimension_name: &str,
-) -> pumpkin_nbt::compound::NbtCompound {
+pub fn get_dimension_type_nbt(dimension_name: &str) -> pumpkin_nbt::compound::NbtCompound {
     use pumpkin_nbt::compound::NbtCompound;
     use pumpkin_nbt::deserializer::NbtReadHelperJava;
     use std::io::Cursor;
@@ -278,7 +275,7 @@ pub fn get_dimension_type_nbt(
     let target_dim = dimension_name
         .strip_prefix("minecraft:")
         .unwrap_or(dimension_name);
-    let synced = pumpkin_data::registry::Registry::get_synced(version);
+    let synced = pumpkin_data::registry::Registry::get_synced();
 
     for reg in synced {
         let reg_name = reg

@@ -1,6 +1,5 @@
 //! Light data: LIGHT_UPDATE and the tail of LEVEL_CHUNK_WITH_LIGHT.
 
-use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
     codec::bit_set::BitSet,
     ser::{NetworkReadExt, NetworkWriteExt},
@@ -36,7 +35,7 @@ pub fn write_light_data(
     }
     // sky, block, empty sky, empty block
     for _ in 0..4 {
-        let mask = BitSet::decode_with_version(&mut light, &CURRENT_MC_VERSION).ok()?;
+        let mask = BitSet::decode(&mut light).ok()?;
         crate::legacy::write_bit_set_legacy(&mut *out, &mask, &version).ok()?;
     }
     out.extend_from_slice(light);
@@ -66,8 +65,7 @@ mod tests {
         let mask = BitSet(Box::new([0b1011_0000_0001]));
         let mut light = Vec::new();
         for _ in 0..4 {
-            mask.encode_with_version(&mut light, &CURRENT_MC_VERSION)
-                .unwrap();
+            mask.encode(&mut light).unwrap();
         }
         let masks_len = light.len();
         // one sky array, no block arrays

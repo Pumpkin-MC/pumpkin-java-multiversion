@@ -174,7 +174,7 @@ pub fn write_bit_set_legacy(
     version: &JavaMinecraftVersion,
 ) -> Result<(), WritingError> {
     if *version >= JavaMinecraftVersion::V_26_3 {
-        return bit_set.encode_with_version(&mut write, version);
+        return bit_set.encode(&mut write);
     }
     write.write_var_int(&VarInt(bit_set.0.len() as i32))?;
     for word in &bit_set.0 {

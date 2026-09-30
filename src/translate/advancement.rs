@@ -1,7 +1,6 @@
 //! UPDATE_ADVANCEMENTS.
 
 use crate::legacy::LegacyWriteExt;
-use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer,
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},
@@ -29,7 +28,6 @@ pub fn update_advancements_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let current = CURRENT_MC_VERSION;
     let format = AdvancementFormat::of(version);
     let mut out = Vec::new();
     out.write_bool(payload.get_bool().ok()?).ok()?;
@@ -47,11 +45,11 @@ pub fn update_advancements_from_current(
         let has_display = payload.get_bool().ok()?;
         out.write_bool(has_display).ok()?;
         if has_display {
-            let title = payload.get_component(&current).ok()?;
-            let description = payload.get_component(&current).ok()?;
+            let title = payload.get_component().ok()?;
+            let description = payload.get_component().ok()?;
             out.write_component_legacy(&title, &version).ok()?;
             out.write_component_legacy(&description, &version).ok()?;
-            let icon = ItemStackSerializer::read_template0(&mut payload, &current)
+            let icon = ItemStackSerializer::read_template(&mut payload)
                 .ok()?
                 .to_stack();
             write_item_for_version(&icon, version, &mut out).ok()?;
@@ -104,6 +102,7 @@ pub fn update_advancements_from_current(
 mod tests {
     use crate::legacy::LegacyWrite;
     use pumpkin_data::Advancement;
+    use pumpkin_data::packet::CURRENT_MC_VERSION;
     use pumpkin_protocol::{ClientPacket, java::client::play::CUpdateAdvancements};
 
     use super::*;

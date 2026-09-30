@@ -61,7 +61,7 @@ pub fn spawn_position_from_current(
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
     let dimension = payload.get_str_borrowed().ok()?.to_string();
-    let location = payload.get_block_pos(&CURRENT_MC_VERSION).ok()?;
+    let location = payload.get_block_pos().ok()?;
     let yaw = payload.get_f32_be().ok()?;
     let pitch = payload.get_f32_be().ok()?;
     let mut out = Vec::new();

@@ -2,7 +2,7 @@
 //! creative slots and clicks sent back.
 
 use crate::legacy::{LegacyReadExt, LegacyWriteExt};
-use pumpkin_data::{item_stack::ItemStack, packet::CURRENT_MC_VERSION};
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_protocol::{
     VarInt,
     codec::item_stack_seralizer::ItemStackSerializer,
@@ -162,7 +162,7 @@ pub fn container_set_content_from_current(
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
     let format = ContainerFormat::of(version);
-    let container_id = payload.get_container_id(&CURRENT_MC_VERSION).ok()?;
+    let container_id = payload.get_container_id().ok()?;
     let state_id = payload.get_var_int().ok()?;
     let count = payload.get_var_int().ok()?;
 
@@ -189,7 +189,7 @@ pub fn container_set_slot_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let container_id = payload.get_container_id(&CURRENT_MC_VERSION).ok()?;
+    let container_id = payload.get_container_id().ok()?;
     let state_id = payload.get_var_int().ok()?;
     let slot = payload.get_i16_be().ok()?;
 
@@ -456,6 +456,7 @@ fn legacy_click_to_current(mut payload: &[u8], version: JavaMinecraftVersion) ->
 #[cfg(test)]
 mod tests {
     use pumpkin_data::item::Item;
+    use pumpkin_data::packet::CURRENT_MC_VERSION;
     use pumpkin_protocol::{ClientPacket, java::client::play::CSetContainerSlot};
 
     use crate::remap::item_id_remap::remap_item_id_for_version;

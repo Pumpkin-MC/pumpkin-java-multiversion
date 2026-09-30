@@ -1,7 +1,6 @@
 //! PLAYER_INFO_UPDATE.
 
 use crate::legacy::LegacyWrite;
-use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
     Property,
     java::client::play::{CPlayerInfoUpdate, InitChat, Player, PlayerAction, PlayerInfoFlags},
@@ -32,7 +31,6 @@ struct Entry {
 }
 
 fn read_entry(read: &mut &[u8], flags: PlayerInfoFlags) -> Option<Entry> {
-    let current = CURRENT_MC_VERSION;
     let uuid = read.get_uuid().ok()?;
     let add = if flags.contains(PlayerInfoFlags::ADD_PLAYER) {
         let name = read.get_str().ok()?;
@@ -87,7 +85,7 @@ fn read_entry(read: &mut &[u8], flags: PlayerInfoFlags) -> Option<Entry> {
         .ok()?;
     let display_name = flags
         .contains(PlayerInfoFlags::UPDATE_DISPLAY_NAME)
-        .then(|| read.get_option(|read| read.get_component(&current)))
+        .then(|| read.get_option(|read| read.get_component()))
         .transpose()
         .ok()?;
     let list_order = flags
@@ -186,6 +184,7 @@ pub fn player_info_update_from_current(
 mod tests {
     use super::*;
     use crate::legacy::LegacyWrite;
+    use pumpkin_data::packet::CURRENT_MC_VERSION;
 
     fn packet(version: JavaMinecraftVersion) -> Vec<u8> {
         let properties = [Property {

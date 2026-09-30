@@ -2,7 +2,6 @@
 
 use crate::legacy::LegacyWrite;
 use pumpkin_data::entity::EntityType;
-use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
     ClientPacket, MultiVersionJavaPacket, VarInt, java::client::play::CSpawnEntity,
 };
@@ -33,7 +32,7 @@ pub fn add_entity_from_current(
     raw_payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<(i32, Vec<u8>)> {
-    let spawn_entity = CSpawnEntity::read_packet_data(raw_payload, &CURRENT_MC_VERSION).ok()?;
+    let spawn_entity = CSpawnEntity::read_packet_data(raw_payload).ok()?;
     let entity_type_id = spawn_entity.r#type.0 as u16;
     entity_data::track_spawn(spawn_entity.entity_id.0, entity_type_id);
     let format = SpawnFormat::of(version);
@@ -108,6 +107,7 @@ pub fn add_entity_from_current(
 mod tests {
     use super::*;
     use crate::legacy::LegacyWrite;
+    use pumpkin_data::packet::CURRENT_MC_VERSION;
 
     #[test]
     fn standing_mob_gets_the_client_type() {

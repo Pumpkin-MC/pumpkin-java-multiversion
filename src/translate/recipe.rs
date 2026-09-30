@@ -1,6 +1,5 @@
 //! Recipe displays: RECIPE_BOOK_ADD, PLACE_GHOST_RECIPE, UPDATE_RECIPES.
 
-use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
     VarInt,
     codec::item_stack_seralizer::ItemStackSerializer,
@@ -125,9 +124,7 @@ impl Writer {
             }
             ITEM_STACK => {
                 self.var_int(client?)?;
-                let stack = ItemStackSerializer::read_template0(read, &CURRENT_MC_VERSION)
-                    .ok()?
-                    .to_stack();
+                let stack = ItemStackSerializer::read_template(read).ok()?.to_stack();
                 if self.format >= RecipeFormat::V26_1 {
                     write_template_for_version(&stack, self.version, &mut self.out).ok()
                 } else {
@@ -314,6 +311,7 @@ pub fn update_recipes_from_current(
 
 #[cfg(test)]
 mod tests {
+    use pumpkin_data::packet::CURRENT_MC_VERSION;
     use pumpkin_protocol::{ClientPacket, java::client::play::CRecipeBookAdd};
 
     use super::*;
