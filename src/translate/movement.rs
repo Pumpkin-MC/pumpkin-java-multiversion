@@ -20,50 +20,17 @@ fn write(packet: &impl LegacyWrite, version: JavaMinecraftVersion) -> Option<Vec
     Some(out)
 }
 
-/// Since 26.3 a var int of `on_ground | steps << 1` precedes the delta. `None` for multi-step
-/// deltas, which older clients cannot express.
-fn on_ground_and_linear(read: &mut &[u8]) -> Option<bool> {
-    let properties = read.get_var_int().ok()?.0;
-    (properties >> 1 == 0).then_some(properties & 1 != 0)
+pub fn pos_from_current(payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+    super::reencode_current::<CUpdateEntityPos>(payload, version)
 }
 
-fn delta(read: &mut &[u8]) -> Option<Vector3<i16>> {
-    Some(Vector3::new(
-        read.get_i16_be().ok()?,
-        read.get_i16_be().ok()?,
-        read.get_i16_be().ok()?,
-    ))
-}
-
-pub fn pos_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
-    let entity_id = payload.get_var_int().ok()?;
-    let on_ground = on_ground_and_linear(&mut payload)?;
-    let delta = delta(&mut payload)?;
-    write(&CUpdateEntityPos::new(entity_id, delta, on_ground), version)
-}
-
-pub fn pos_rot_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
-    let entity_id = payload.get_var_int().ok()?;
-    let on_ground = on_ground_and_linear(&mut payload)?;
-    let delta = delta(&mut payload)?;
-    let yaw = payload.get_u8().ok()?;
-    let pitch = payload.get_u8().ok()?;
-    write(
-        &CUpdateEntityPosRot::new(entity_id, delta, yaw, pitch, on_ground),
-        version,
-    )
+pub fn pos_rot_from_current(payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+    super::reencode_current::<CUpdateEntityPosRot>(payload, version)
 }
 
 /// On ground moved in front of the rotation in 26.3.
-pub fn rot_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
-    let entity_id = payload.get_var_int().ok()?;
-    let on_ground = payload.get_bool().ok()?;
-    let yaw = payload.get_u8().ok()?;
-    let pitch = payload.get_u8().ok()?;
-    write(
-        &CUpdateEntityRot::new(entity_id, yaw, pitch, on_ground),
-        version,
-    )
+pub fn rot_from_current(payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+    super::reencode_current::<CUpdateEntityRot>(payload, version)
 }
 
 /// ENTITY_POSITION_SYNC, as `(client packet id, payload)`: since 26.3 a path replaces the
@@ -149,6 +116,7 @@ mod tests {
     use pumpkin_data::packet::CURRENT_MC_VERSION;
     use pumpkin_protocol::ClientPacket;
     use pumpkin_protocol::VarInt;
+    use pumpkin_protocol::ser::NetworkWriteExt;
 
     use super::*;
 
@@ -204,6 +172,20 @@ mod tests {
                 rot_from_current,
             );
         }
+    }
+
+    #[test]
+    fn pos_drops_stepped_delta() {
+        let mut payload = Vec::new();
+        payload.write_var_int(&VarInt(9)).unwrap();
+        payload.write_var_int(&VarInt(2)).unwrap();
+        payload.write_i16_be(1).unwrap();
+        payload.write_i16_be(2).unwrap();
+        payload.write_i16_be(3).unwrap();
+        assert_eq!(
+            pos_from_current(&payload, JavaMinecraftVersion::V_1_21_11),
+            None
+        );
     }
 
     #[test]
