@@ -14,7 +14,6 @@ impl LegacyWrite for CRespawn {
         let v1_14 = *version >= JavaMinecraftVersion::V_1_14;
         let v1_15 = *version >= JavaMinecraftVersion::V_1_15;
         let v1_16 = *version >= JavaMinecraftVersion::V_1_16;
-        let v1_16_2 = *version >= JavaMinecraftVersion::V_1_16_2;
         let v1_19 = *version >= JavaMinecraftVersion::V_1_19;
         let v1_19_3 = *version >= JavaMinecraftVersion::V_1_19_3;
         let v1_20 = *version >= JavaMinecraftVersion::V_1_20;
@@ -46,14 +45,14 @@ impl LegacyWrite for CRespawn {
         }
 
         if !v1_20_2 {
-            if v1_16_2 && *version < JavaMinecraftVersion::V_1_19 {
-                let dim_type_compound = crate::legacy::login::get_dimension_type_nbt(
-                    self.player_spawn_info.dimension.minecraft_name,
-                );
-                let dim_bytes = pumpkin_nbt::Nbt::new(String::new(), dim_type_compound).write();
-                write.write_all(&dim_bytes)?;
+            let dimension = self.player_spawn_info.dimension.minecraft_name;
+            // 1.16.2 - 1.18.2 send the dimension type itself, the others its name
+            if let Some(dimension_type) =
+                crate::translate::registry::dimension_type_nbt(*version, dimension)
+            {
+                write.write_all(dimension_type)?;
             } else {
-                write.write_string(self.player_spawn_info.dimension.minecraft_name)?;
+                write.write_string(dimension)?;
             }
             write.write_string(self.player_spawn_info.dimension.minecraft_name)?;
             write.write_i64_be(self.player_spawn_info.hashed_seed)?;

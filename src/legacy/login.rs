@@ -2,6 +2,7 @@
 
 use crate::legacy::player_spawn_data::write_game_modes;
 use crate::legacy::{LegacyWrite, LegacyWriteExt};
+use crate::translate::registry::{dimension_type_nbt, login_codec};
 use pumpkin_protocol::java::client::play::CLogin;
 use pumpkin_protocol::{
     VarInt,
@@ -51,20 +52,15 @@ impl LegacyWrite for CLogin<'_> {
             }
             write.write_list(self.dimension_names, |write, dim| write.write_string(dim))?;
             if !v1_20_2 {
-                let registry_codec = build_v1_20_registry_codec(*version);
-                let nbt_bytes = pumpkin_nbt::Nbt::new(String::new(), registry_codec).write();
-                write.write_all(&nbt_bytes)?;
-                if v1_16_2 && *version < JavaMinecraftVersion::V_1_19 {
-                    // In 1.16.2 - 1.18.2, this field is the dimension type NBT Compound!
-                    let dim_type_compound =
-                        get_dimension_type_nbt(self.spawn_data.dimension.minecraft_name);
-                    let dim_bytes = pumpkin_nbt::Nbt::new(String::new(), dim_type_compound).write();
-                    write.write_all(&dim_bytes)?;
+                let dimension = self.spawn_data.dimension.minecraft_name;
+                write.write_all(login_codec(*version).unwrap_or_default())?;
+                // 1.16.2 - 1.18.2 send the dimension type itself, the others its name
+                if let Some(dimension_type) = dimension_type_nbt(*version, dimension) {
+                    write.write_all(dimension_type)?;
                 } else {
-                    // In 1.16 - 1.16.1 and 1.19 - 1.20.1, this field is the dimension Identifier string
-                    write.write_string(self.spawn_data.dimension.minecraft_name)?;
+                    write.write_string(dimension)?;
                 }
-                write.write_string(self.spawn_data.dimension.minecraft_name)?;
+                write.write_string(dimension)?;
             }
         } else {
             let legacy_dim_id: i32 = match self.spawn_data.dimension.minecraft_name {
@@ -174,140 +170,4 @@ impl LegacyWrite for CLogin<'_> {
 
         Ok(())
     }
-}
-
-#[must_use]
-pub fn build_v1_20_registry_codec(
-    version: JavaMinecraftVersion,
-) -> pumpkin_nbt::compound::NbtCompound {
-    use pumpkin_nbt::compound::NbtCompound;
-    use pumpkin_nbt::deserializer::NbtReadHelperJava;
-    use pumpkin_nbt::tag::NbtTag;
-    use std::io::Cursor;
-
-    let mut root = NbtCompound::new();
-    let synced = pumpkin_data::registry::Registry::get_synced();
-
-    if version < JavaMinecraftVersion::V_1_16_2 {
-        for reg in synced {
-            let reg_name = if let Some(suffix) = reg.registry_id.strip_prefix("minecraft:") {
-                suffix
-            } else {
-                &reg.registry_id
-            };
-            if reg_name == "dimension_type" {
-                let mut dim_list = Vec::new();
-                for entry in &reg.registry_entries {
-                    if let Some(ref data) = entry.data {
-                        let mut cursor = Cursor::new(&data[..]);
-                        let mut reader = NbtReadHelperJava::new(&mut cursor);
-                        if let Ok(element_nbt) = pumpkin_nbt::Nbt::read_unnamed(&mut reader) {
-                            let mut entry_compound = element_nbt.root_tag;
-                            entry_compound
-                                .put("name", NbtTag::String(entry.entry_id.clone().into()));
-                            dim_list.push(NbtTag::Compound(entry_compound));
-                        }
-                    }
-                }
-                root.put("dimension", NbtTag::List(dim_list));
-            }
-        }
-        return root;
-    }
-
-    for reg in synced {
-        let reg_name = if let Some(suffix) = reg.registry_id.strip_prefix("minecraft:") {
-            suffix
-        } else {
-            &reg.registry_id
-        };
-        if version < JavaMinecraftVersion::V_1_20_2
-            && !matches!(
-                reg_name,
-                "dimension_type"
-                    | "worldgen/biome"
-                    | "chat_type"
-                    | "damage_type"
-                    | "trim_pattern"
-                    | "trim_material"
-            )
-        {
-            continue;
-        }
-
-        let mut reg_compound = NbtCompound::new();
-        let reg_type = if reg.registry_id.contains(':') {
-            reg.registry_id.clone()
-        } else {
-            format!("minecraft:{}", reg.registry_id)
-        };
-        reg_compound.put("type", NbtTag::String(reg_type.clone().into()));
-
-        let mut values_list = Vec::new();
-        for (i, entry) in reg.registry_entries.iter().enumerate() {
-            let mut entry_compound = NbtCompound::new();
-            entry_compound.put("name", NbtTag::String(entry.entry_id.clone().into()));
-            entry_compound.put("id", NbtTag::Int(i as i32));
-
-            if let Some(ref data) = entry.data {
-                let mut cursor = Cursor::new(&data[..]);
-                let mut reader = NbtReadHelperJava::new(&mut cursor);
-                if let Ok(element_nbt) = pumpkin_nbt::Nbt::read_unnamed(&mut reader) {
-                    entry_compound.put("element", NbtTag::Compound(element_nbt.root_tag));
-                }
-            }
-            values_list.push(NbtTag::Compound(entry_compound));
-        }
-
-        reg_compound.put("value", NbtTag::List(values_list));
-        root.put(&reg_type, NbtTag::Compound(reg_compound));
-    }
-
-    root
-}
-
-#[must_use]
-pub fn get_dimension_type_nbt(dimension_name: &str) -> pumpkin_nbt::compound::NbtCompound {
-    use pumpkin_nbt::compound::NbtCompound;
-    use pumpkin_nbt::deserializer::NbtReadHelperJava;
-    use std::io::Cursor;
-
-    let target_dim = dimension_name
-        .strip_prefix("minecraft:")
-        .unwrap_or(dimension_name);
-    let synced = pumpkin_data::registry::Registry::get_synced();
-
-    for reg in synced {
-        let reg_name = reg
-            .registry_id
-            .strip_prefix("minecraft:")
-            .unwrap_or(&reg.registry_id);
-        if reg_name == "dimension_type" {
-            for entry in &reg.registry_entries {
-                let entry_id = entry
-                    .entry_id
-                    .strip_prefix("minecraft:")
-                    .unwrap_or(&entry.entry_id);
-                if entry_id == target_dim
-                    && let Some(ref data) = entry.data
-                {
-                    let mut cursor = Cursor::new(&data[..]);
-                    let mut reader = NbtReadHelperJava::new(&mut cursor);
-                    if let Ok(element_nbt) = pumpkin_nbt::Nbt::read_unnamed(&mut reader) {
-                        return element_nbt.root_tag;
-                    }
-                }
-            }
-            if let Some(first_entry) = reg.registry_entries.first()
-                && let Some(ref data) = first_entry.data
-            {
-                let mut cursor = Cursor::new(&data[..]);
-                let mut reader = NbtReadHelperJava::new(&mut cursor);
-                if let Ok(element_nbt) = pumpkin_nbt::Nbt::read_unnamed(&mut reader) {
-                    return element_nbt.root_tag;
-                }
-            }
-        }
-    }
-    NbtCompound::new()
 }

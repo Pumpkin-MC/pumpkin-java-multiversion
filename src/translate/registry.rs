@@ -73,6 +73,37 @@ fn synced_for(version: JavaMinecraftVersion) -> Option<Synced> {
     })
 }
 
+/// The login packet's registry codec, as named NBT. `None` outside 1.16 - 1.20.1.
+#[must_use]
+pub fn login_codec(version: JavaMinecraftVersion) -> Option<&'static [u8]> {
+    use DatapackVersion as D;
+    Some(match DatapackVersion::of(version) {
+        D::V1_16 => LOGIN_CODEC_1_16,
+        D::V1_16_2 => LOGIN_CODEC_1_16_2,
+        D::V1_17 => LOGIN_CODEC_1_17,
+        D::V1_18 => LOGIN_CODEC_1_18,
+        D::V1_19 => LOGIN_CODEC_1_19,
+        D::V1_20 => LOGIN_CODEC_1_20,
+        _ => return None,
+    })
+}
+
+/// The dimension type of `dimension` as named NBT, for the login and respawn packets of
+/// 1.16.2 - 1.18.2. Dimensions the client lacks use the overworld's.
+#[must_use]
+pub fn dimension_type_nbt(version: JavaMinecraftVersion, dimension: &str) -> Option<&'static [u8]> {
+    use DatapackVersion as D;
+    let types = match DatapackVersion::of(version) {
+        D::V1_16_2 => DIMENSION_TYPES_1_16_2,
+        D::V1_17 => DIMENSION_TYPES_1_17,
+        D::V1_18 => DIMENSION_TYPES_1_18,
+        _ => return None,
+    };
+    let name = dimension.strip_prefix("minecraft:").unwrap_or(dimension);
+    let find = |name: &str| types.iter().find(|(n, _)| *n == name).map(|(_, nbt)| *nbt);
+    find(name).or_else(|| find("overworld"))
+}
+
 type Names = &'static [(&'static str, &'static [&'static str])];
 
 /// Entry order of the client's synced registries. `None` for 26.3 and before 1.16.
@@ -264,5 +295,65 @@ mod tests {
         assert!(
             registry_data_from_current(&registry_payload("minecraft:chat_type"), version).is_none()
         );
+    }
+
+    fn read_named(bytes: &[u8]) -> pumpkin_nbt::compound::NbtCompound {
+        let mut cursor = std::io::Cursor::new(bytes);
+        let mut reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
+        let nbt = pumpkin_nbt::Nbt::read(&mut reader).unwrap();
+        assert_eq!(cursor.position() as usize, bytes.len());
+        nbt.root_tag
+    }
+
+    #[test]
+    fn login_codec_1_18_biomes_match_the_remap_order() {
+        use pumpkin_nbt::tag::NbtTag;
+
+        let codec = read_named(login_codec(JavaMinecraftVersion::V_1_18_2).unwrap());
+        let biomes = codec.get_compound("minecraft:worldgen/biome").unwrap();
+        let Some(NbtTag::List(values)) = biomes.get("value") else {
+            panic!("no biome list");
+        };
+        let (_, names) = NAMES_1_18
+            .iter()
+            .find(|(id, _)| *id == "worldgen/biome")
+            .unwrap();
+        assert_eq!(values.len(), names.len());
+        for (id, (value, name)) in values.iter().zip(*names).enumerate() {
+            let NbtTag::Compound(value) = value else {
+                panic!("biome entry is not a compound");
+            };
+            assert_eq!(value.get_int("id"), Some(id as i32));
+            assert_eq!(
+                value.get_string("name"),
+                Some(format!("minecraft:{name}").as_str())
+            );
+        }
+        assert!(codec.get_compound("minecraft:chat_type").is_none());
+    }
+
+    #[test]
+    fn login_codec_1_16_lists_dimensions() {
+        let codec = read_named(login_codec(JavaMinecraftVersion::V_1_16_1).unwrap());
+        assert!(codec.get("dimension").is_some());
+        assert!(login_codec(JavaMinecraftVersion::V_1_15_2).is_none());
+        assert!(login_codec(JavaMinecraftVersion::V_1_20_2).is_none());
+    }
+
+    #[test]
+    fn dimension_type_only_from_1_16_2_to_1_18_2() {
+        let nether = read_named(
+            dimension_type_nbt(JavaMinecraftVersion::V_1_16_2, "minecraft:the_nether").unwrap(),
+        );
+        assert_eq!(nether.get_int("ultrawarm"), Some(1));
+        let custom = dimension_type_nbt(JavaMinecraftVersion::V_1_17, "plugin:custom");
+        assert_eq!(
+            custom,
+            dimension_type_nbt(JavaMinecraftVersion::V_1_17, "minecraft:overworld")
+        );
+        assert!(
+            dimension_type_nbt(JavaMinecraftVersion::V_1_16_1, "minecraft:overworld").is_none()
+        );
+        assert!(dimension_type_nbt(JavaMinecraftVersion::V_1_19, "minecraft:overworld").is_none());
     }
 }
