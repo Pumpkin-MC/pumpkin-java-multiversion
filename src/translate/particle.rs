@@ -4,6 +4,7 @@ use crate::legacy::LegacyWrite;
 use pumpkin_data::particle::Particle;
 use pumpkin_protocol::{
     VarInt,
+    codec::particle::ParticleOptionsLayout,
     java::client::play::CParticle,
     ser::{NetworkReadExt, NetworkWriteExt},
 };
@@ -23,45 +24,6 @@ eras! {
         /// Effect, instant effect, dragon breath and flash gained options.
         V1_21_9 = V_1_21_9,
     }
-}
-
-/// 26.3 option layouts.
-enum Options {
-    None,
-    BlockState,
-    Color,
-    Dust,
-    DustColorTransition,
-    Spell,
-    Power,
-    Float,
-    VarInt,
-}
-
-/// `None` for options that are not translated yet.
-const fn options(particle: Particle) -> Option<Options> {
-    use Particle as P;
-    Some(match particle {
-        P::Block | P::BlockMarker | P::FallingDust | P::DustPillar | P::BlockCrumble => {
-            Options::BlockState
-        }
-        P::EntityEffect | P::TintedLeaves | P::Flash => Options::Color,
-        P::Dust => Options::Dust,
-        P::DustColorTransition => Options::DustColorTransition,
-        P::Effect | P::InstantEffect => Options::Spell,
-        P::DragonBreath => Options::Power,
-        P::SculkCharge => Options::Float,
-        P::Shriek => Options::VarInt,
-        // TODO: item, vibration, trail and geyser options
-        P::Item
-        | P::Vibration
-        | P::Trail
-        | P::Geyser
-        | P::GeyserBase
-        | P::GeyserPoof
-        | P::GeyserPlume => return None,
-        _ => Options::None,
-    })
 }
 
 /// Packed RGB as the three floats of older dust particles.
@@ -85,26 +47,26 @@ pub fn write_particle(
     }
     let id = read.get_var_int().ok()?.0;
     let particle = Particle::from_id(u16::try_from(id).ok()?)?;
-    let options = options(particle)?;
+    let options = ParticleOptionsLayout::of(particle);
     out.write_var_int(&VarInt(i32::from(remap_particle_id_for_version(
         id as u16, version,
     ))))
     .ok()?;
     match options {
-        Options::None => {}
-        Options::BlockState => {
+        ParticleOptionsLayout::None => {}
+        ParticleOptionsLayout::BlockState => {
             let state = read.get_var_int().ok()?.0 as u32;
             out.write_var_int(&VarInt(remap_state(state, version) as i32))
                 .ok()?;
         }
-        Options::Color => {
+        ParticleOptionsLayout::Color => {
             let color = read.get_i32_be().ok()?;
             // Flash had no color before 1.21.9
             if particle != Particle::Flash || format >= ParticleFormat::V1_21_9 {
                 out.write_i32_be(color).ok()?;
             }
         }
-        Options::Dust => {
+        ParticleOptionsLayout::Dust => {
             let color = read.get_i32_be().ok()?;
             let scale = read.get_f32_be().ok()?;
             if format >= ParticleFormat::V1_21_2 {
@@ -114,7 +76,7 @@ pub fn write_particle(
             }
             out.write_f32_be(scale).ok()?;
         }
-        Options::DustColorTransition => {
+        ParticleOptionsLayout::DustColorTransition => {
             let from = read.get_i32_be().ok()?;
             let to = read.get_i32_be().ok()?;
             let scale = read.get_f32_be().ok()?;
@@ -127,7 +89,7 @@ pub fn write_particle(
             }
             out.write_f32_be(scale).ok()?;
         }
-        Options::Spell => {
+        ParticleOptionsLayout::Spell => {
             let color = read.get_i32_be().ok()?;
             let power = read.get_f32_be().ok()?;
             if format >= ParticleFormat::V1_21_9 {
@@ -135,14 +97,20 @@ pub fn write_particle(
                 out.write_f32_be(power).ok()?;
             }
         }
-        Options::Power => {
+        ParticleOptionsLayout::Power => {
             let power = read.get_f32_be().ok()?;
             if format >= ParticleFormat::V1_21_9 {
                 out.write_f32_be(power).ok()?;
             }
         }
-        Options::Float => out.write_f32_be(read.get_f32_be().ok()?).ok()?,
-        Options::VarInt => out.write_var_int(&read.get_var_int().ok()?).ok()?,
+        ParticleOptionsLayout::Float => out.write_f32_be(read.get_f32_be().ok()?).ok()?,
+        ParticleOptionsLayout::VarInt => out.write_var_int(&read.get_var_int().ok()?).ok()?,
+        // TODO: item, vibration, trail and geyser options
+        ParticleOptionsLayout::Item
+        | ParticleOptionsLayout::Vibration
+        | ParticleOptionsLayout::Trail
+        | ParticleOptionsLayout::Geyser
+        | ParticleOptionsLayout::GeyserBase => return None,
     }
     Some(())
 }
