@@ -1,0 +1,1 @@
+../../../../../../Pumpkin/crates/pumpkin-protocol/src/java/client/config/remove_resource_pack.rs

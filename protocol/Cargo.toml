@@ -1,0 +1,39 @@
+[package]
+name = "pumpkin-protocol-multiversion"
+version = "0.2.0"
+edition = "2024"
+license = "GPL-3.0"
+description = "Pumpkin's protocol crate with the encodings of every known Java version"
+
+[lib]
+# Package name differs so it can sit next to core's `pumpkin-protocol` in one graph.
+name = "pumpkin_protocol"
+
+[features]
+default = ["query"]
+serverbound = []
+clientbound = []
+query = []
+
+[dependencies]
+pumpkin-nbt = { path = "../../Pumpkin/crates/pumpkin-nbt", version = "0.2" }
+pumpkin-data = { path = "../../Pumpkin/crates/pumpkin-data", version = "0.2", features = ["default", "bedrock_creative", "bedrock_biome"] }
+pumpkin-macros = { path = "../../Pumpkin/crates/pumpkin-macros", version = "0.2" }
+pumpkin-util = { path = "../../Pumpkin/crates/pumpkin-util", version = "0.2" }
+serde = { version = "1.0", default-features = false, features = ["derive", "std"] }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+cesu8 = { version = "1.1", default-features = false }
+uuid = { version = "1.26", default-features = false, features = ["serde", "v3", "v4", "std"] }
+thiserror = { version = "2.0", default-features = false }
+tokio = { version = "1.53", default-features = false, features = ["io-util", "sync"] }
+bytes = { version = "1.12", default-features = false, features = ["serde", "std"] }
+aes = { version = "0.9", default-features = false }
+cfb8 = { version = "0.9", default-features = false }
+hybrid-array = "0.4"
+async-compression = { version = "0.4.48", default-features = false, features = ["tokio", "zlib", "deflate"] }
+flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
+bitflags = { version = "2.13.2", default-features = false, features = ["std"] }
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+tokio = { version = "1.53", default-features = false, features = ["macros", "rt-multi-thread"] }

@@ -1,0 +1,1 @@
+../../../../../../Pumpkin/crates/pumpkin-protocol/src/java/client/config/code_of_conduct.rs

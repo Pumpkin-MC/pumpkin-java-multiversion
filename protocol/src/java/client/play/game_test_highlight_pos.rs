@@ -1,0 +1,1 @@
+../../../../../../Pumpkin/crates/pumpkin-protocol/src/java/client/play/game_test_highlight_pos.rs

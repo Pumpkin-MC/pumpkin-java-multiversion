@@ -1,0 +1,1 @@
+../../../../../../Pumpkin/crates/pumpkin-protocol/src/java/client/config/custom_report_details.rs

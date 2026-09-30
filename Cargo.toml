@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pumpkin-plugin-api = { path = "../Pumpkin/crates/pumpkin-plugin-api", version = "0.2" }
-pumpkin-protocol = { path = "../Pumpkin/crates/pumpkin-protocol", version = "0.2" }
+pumpkin-protocol = { path = "protocol", package = "pumpkin-protocol-multiversion", version = "0.2" }
 pumpkin-util = { path = "../Pumpkin/crates/pumpkin-util", version = "0.2" }
 pumpkin-nbt = { path = "../Pumpkin/crates/pumpkin-nbt", version = "0.2" }
 pumpkin-data = { path = "../Pumpkin/crates/pumpkin-data", version = "0.2" }
@@ -27,3 +27,6 @@ phf = { version = "0.14.0", features = ["macros"] }
 [build-dependencies]
 pumpkin-nbt = { path = "../Pumpkin/crates/pumpkin-nbt", version = "0.2" }
 serde_json = "1.0"
+
+[workspace]
+members = [".", "protocol"]
