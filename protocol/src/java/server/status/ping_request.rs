@@ -1,1 +1,0 @@
-../../../../../../Pumpkin/crates/pumpkin-protocol/src/java/server/status/ping_request.rs

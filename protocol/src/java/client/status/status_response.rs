@@ -1,1 +1,0 @@
-../../../../../../Pumpkin/crates/pumpkin-protocol/src/java/client/status/status_response.rs

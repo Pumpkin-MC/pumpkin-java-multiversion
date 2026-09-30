@@ -1,1 +1,0 @@
-../../../../Pumpkin/crates/pumpkin-protocol/src/codec/u24_type.rs

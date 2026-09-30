@@ -1,15 +1,16 @@
 //! Inventory items: container content and slots, cursor, player inventory, equipment, and the
 //! creative slots and clicks sent back.
 
+use crate::legacy::{LegacyReadExt, LegacyWriteExt};
 use pumpkin_data::{item_stack::ItemStack, packet::CURRENT_MC_VERSION};
 use pumpkin_protocol::{
     VarInt,
     codec::item_stack_seralizer::ItemStackSerializer,
-    java::client::play::slot_to_version,
     ser::{NetworkReadExt, NetworkWriteExt},
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
+use crate::legacy::slot_to_version;
 use crate::remap::{
     data_component_type_id_remap::remap_data_component_type_id_from_version,
     item_id_remap::remap_item_id_from_version,
@@ -166,7 +167,8 @@ pub fn container_set_content_from_current(
     let count = payload.get_var_int().ok()?;
 
     let mut out = Vec::with_capacity(payload.len());
-    out.write_container_id(&container_id, &version).ok()?;
+    out.write_container_id_legacy(&container_id, &version)
+        .ok()?;
     if format >= ContainerFormat::V1_17_1 {
         out.write_var_int(&state_id).ok()?;
         out.write_var_int(&count).ok()?;
@@ -192,7 +194,8 @@ pub fn container_set_slot_from_current(
     let slot = payload.get_i16_be().ok()?;
 
     let mut out = Vec::new();
-    out.write_container_id(&container_id, &version).ok()?;
+    out.write_container_id_legacy(&container_id, &version)
+        .ok()?;
     if ContainerFormat::of(version) >= ContainerFormat::V1_17_1 {
         out.write_var_int(&state_id).ok()?;
     }
@@ -399,7 +402,7 @@ pub fn container_click_to_current(
 /// so unreadable or missing ones are sent empty and the server corrects the client.
 fn legacy_click_to_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
     let format = ClickFormat::of(version);
-    let container = payload.get_container_id(&version).ok()?;
+    let container = payload.get_container_id_legacy(&version).ok()?;
     // A wrong state id makes the server resend the whole container
     let state_id = if format >= ClickFormat::V1_17_1 {
         payload.get_var_int().ok()?

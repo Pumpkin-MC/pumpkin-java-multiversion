@@ -1,1 +1,0 @@
-../../../../../../Pumpkin/crates/pumpkin-protocol/src/java/client/play/debug_block_value.rs

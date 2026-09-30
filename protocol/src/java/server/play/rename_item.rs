@@ -1,1 +1,0 @@
-../../../../../../Pumpkin/crates/pumpkin-protocol/src/java/server/play/rename_item.rs

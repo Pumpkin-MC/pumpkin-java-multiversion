@@ -1,8 +1,9 @@
 //! PLAYER_INFO_UPDATE.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
-    ClientPacket, Property,
+    Property,
     java::client::play::{CPlayerInfoUpdate, InitChat, Player, PlayerAction, PlayerInfoFlags},
     ser::{NetworkReadExt, NetworkReadSliceExt, ReadingError},
 };
@@ -176,7 +177,7 @@ pub fn player_info_update_from_current(
         .collect();
     let mut out = Vec::new();
     CPlayerInfoUpdate::new(bits, &players)
-        .write_packet_data(&mut out, &version)
+        .write_legacy(&mut out, &version)
         .ok()?;
     Some(out)
 }
@@ -184,6 +185,7 @@ pub fn player_info_update_from_current(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::legacy::LegacyWrite;
 
     fn packet(version: JavaMinecraftVersion) -> Vec<u8> {
         let properties = [Property {
@@ -211,7 +213,7 @@ mod tests {
         let bits = (PlayerInfoFlags::all() - PlayerInfoFlags::INITIALIZE_CHAT).bits();
         let mut out = Vec::new();
         CPlayerInfoUpdate::new(bits, &players)
-            .write_packet_data(&mut out, &version)
+            .write_legacy(&mut out, &version)
             .unwrap();
         out
     }

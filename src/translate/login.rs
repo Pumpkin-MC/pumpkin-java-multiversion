@@ -1,8 +1,9 @@
 //! Login state: HELLO, KEY and LOGIN_FINISHED.
 
+use crate::legacy::{LegacyRead, LegacyWrite};
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
-    ClientPacket, Property, ServerPacket,
+    ClientPacket, Property,
     java::{client::login::CLoginSuccess, server::login::SEncryptionResponse},
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},
 };
@@ -36,7 +37,7 @@ pub fn key_to_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Opti
         KeyFormat::V1_7 | KeyFormat::V1_19_3 => {}
         KeyFormat::V1_8 | KeyFormat::V1_20_2 => return None,
     }
-    let packet = SEncryptionResponse::read(&mut payload, &version).ok()?;
+    let packet = SEncryptionResponse::read_legacy(&mut payload, &version).ok()?;
     let mut out = Vec::new();
     packet
         .write_packet_data(&mut out, &CURRENT_MC_VERSION)
@@ -71,13 +72,15 @@ pub fn login_success_from_current(
     let session_id = payload.get_uuid().ok()?;
     let packet = CLoginSuccess::new(&uuid, username, &properties, true, session_id);
     let mut out = Vec::new();
-    packet.write_packet_data(&mut out, &version).ok()?;
+    packet.write_legacy(&mut out, &version).ok()?;
     Some(out)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
     use pumpkin_plugin_api::events_wit::ConnectionState;
+    use pumpkin_protocol::ServerPacket;
     use pumpkin_protocol::{
         VarInt,
         java::client::login::CEncryptionRequest,
@@ -93,7 +96,7 @@ mod tests {
             verify_token: token.to_vec().into_boxed_slice(),
         };
         let mut buf = Vec::new();
-        packet.write_packet_data(&mut buf, &version).unwrap();
+        packet.write_legacy(&mut buf, &version).unwrap();
         buf
     }
 
@@ -183,10 +186,14 @@ mod tests {
             id,
             mappings::clientbound::login::HELLO.to_id(JavaMinecraftVersion::V_1_7_6)
         );
+        // Server id, then the key and token with short lengths
         let mut slice = out.as_slice();
-        let read = CEncryptionRequest::read(&mut slice, &JavaMinecraftVersion::V_1_7_6).unwrap();
-        assert_eq!(read.public_key, b"public_key_bytes");
-        assert_eq!(read.verify_token, b"tokn");
+        assert_eq!(&*slice.get_str().unwrap(), "");
+        for expected in [&b"public_key_bytes"[..], b"tokn"] {
+            let len = slice.get_i16_be().unwrap() as usize;
+            assert_eq!(slice.read_slice_borrowed(len).unwrap(), expected);
+        }
+        assert!(slice.is_empty());
     }
 
     fn login_success_payload() -> (uuid::Uuid, Vec<u8>) {

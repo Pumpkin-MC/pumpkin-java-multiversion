@@ -1,8 +1,8 @@
 //! Resource pack push (clientbound) and response (serverbound).
 
+use crate::legacy::LegacyWrite;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
-    ClientPacket,
     java::client::config::CConfigAddResourcePack,
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},
 };
@@ -48,6 +48,6 @@ pub fn push_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> O
     };
     let packet = CConfigAddResourcePack::new(&uuid, url, hash, forced, prompt_message);
     let mut out = Vec::new();
-    packet.write_packet_data(&mut out, &version).ok()?;
+    packet.write_legacy(&mut out, &version).ok()?;
     Some(out)
 }

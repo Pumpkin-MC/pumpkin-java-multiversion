@@ -1,8 +1,8 @@
 //! Player spawn info: play LOGIN, RESPAWN and SET_DEFAULT_SPAWN_POSITION.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_data::{entity::EntityType, packet::CURRENT_MC_VERSION};
 use pumpkin_protocol::{
-    ClientPacket,
     java::client::play::{CLogin, CPlayerSpawnPosition, CRespawn, PlayerSpawnData},
     ser::{NetworkReadExt, NetworkReadSliceExt},
 };
@@ -45,7 +45,7 @@ pub fn login_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> 
         enforce_secure_chat,
     };
     let mut out = Vec::new();
-    packet.write_packet_data(&mut out, &version).ok()?;
+    packet.write_legacy(&mut out, &version).ok()?;
     Some(out)
 }
 
@@ -66,13 +66,15 @@ pub fn spawn_position_from_current(
     let pitch = payload.get_f32_be().ok()?;
     let mut out = Vec::new();
     CPlayerSpawnPosition::new(location, yaw, pitch, dimension)
-        .write_packet_data(&mut out, &version)
+        .write_legacy(&mut out, &version)
         .ok()?;
     Some(out)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
+    use pumpkin_protocol::ClientPacket;
     use pumpkin_protocol::VarInt;
 
     use super::*;
@@ -110,7 +112,7 @@ mod tests {
             .unwrap();
         let mut expected = Vec::new();
         packet
-            .write_packet_data(&mut expected, &JavaMinecraftVersion::V_1_21_11)
+            .write_legacy(&mut expected, &JavaMinecraftVersion::V_1_21_11)
             .unwrap();
         let out = login_from_current(&payload, JavaMinecraftVersion::V_1_21_11).unwrap();
         assert_eq!(out, expected);
@@ -138,7 +140,7 @@ mod tests {
             JavaMinecraftVersion::V_1_8,
         ] {
             let mut expected = Vec::new();
-            packet().write_packet_data(&mut expected, &version).unwrap();
+            packet().write_legacy(&mut expected, &version).unwrap();
             assert_eq!(
                 spawn_position_from_current(&current, version),
                 Some(expected)

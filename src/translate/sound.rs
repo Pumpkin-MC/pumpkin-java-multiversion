@@ -1,7 +1,8 @@
 //! Sounds: SOUND, SOUND_ENTITY and STOP_SOUND.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_protocol::{
-    ClientPacket, IdOr, SoundEvent, VarInt,
+    IdOr, SoundEvent, VarInt,
     java::client::play::{CEntitySoundEffect, CSoundEffect},
     ser::{NetworkReadExt, NetworkWriteExt},
 };
@@ -58,9 +59,9 @@ fn read_source(read: &mut &[u8], version: JavaMinecraftVersion) -> Option<VarInt
     )
 }
 
-fn write(packet: &impl ClientPacket, version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+fn write(packet: &impl LegacyWrite, version: JavaMinecraftVersion) -> Option<Vec<u8>> {
     let mut out = Vec::new();
-    packet.write_packet_data(&mut out, &version).ok()?;
+    packet.write_legacy(&mut out, &version).ok()?;
     Some(out)
 }
 

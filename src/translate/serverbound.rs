@@ -1,8 +1,9 @@
 //! Serverbound play packets from older clients to 26.3.
 
+use crate::legacy::LegacyRead;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
-    ClientPacket, ServerPacket, VarInt,
+    ClientPacket, VarInt,
     java::server::play::{ActionType, SInteract},
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},
 };
@@ -110,7 +111,7 @@ pub fn interact_to_current(
     if format == InteractFormat::V26_1 {
         return Some((play::INTERACT.current(), payload.to_vec()));
     }
-    let interact = SInteract::read(&mut payload, &version).ok()?;
+    let interact = SInteract::read_legacy(&mut payload, &version).ok()?;
     let action = ActionType::try_from(interact.r#type.0).ok()?;
     let mut out = Vec::new();
     match action {
@@ -339,6 +340,7 @@ pub fn play_to_current(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pumpkin_protocol::ServerPacket;
 
     const V1_21_11: JavaMinecraftVersion = JavaMinecraftVersion::V_1_21_11;
 

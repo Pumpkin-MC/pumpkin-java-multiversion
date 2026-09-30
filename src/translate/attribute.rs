@@ -1,7 +1,8 @@
 //! Entity attributes: UPDATE_ATTRIBUTES.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_data::{attributes::Attributes, packet::CURRENT_MC_VERSION};
-use pumpkin_protocol::{ClientPacket, ServerPacket, VarInt, java::client::play::CUpdateAttributes};
+use pumpkin_protocol::{ServerPacket, VarInt, java::client::play::CUpdateAttributes};
 use pumpkin_util::version::JavaMinecraftVersion;
 
 use crate::remap::attribute_id_remap::remap_attribute_id_for_version;
@@ -38,12 +39,14 @@ pub fn update_attributes_from_current(
         })
     });
     let mut out = Vec::new();
-    packet.write_packet_data(&mut out, &version).ok()?;
+    packet.write_legacy(&mut out, &version).ok()?;
     Some(out)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
+    use pumpkin_protocol::ClientPacket;
     use pumpkin_protocol::java::client::play::Property;
 
     use super::*;
@@ -82,7 +85,7 @@ mod tests {
         );
         let mut expected_bytes = Vec::new();
         expected
-            .write_packet_data(&mut expected_bytes, &version)
+            .write_legacy(&mut expected_bytes, &version)
             .unwrap();
         assert_eq!(
             update_attributes_from_current(&current, version),

@@ -360,7 +360,7 @@ impl ClientPacket for CSpawnLivingEntity {
         write.write_u8(self.pitch)?;
         write.write_u8(self.head_yaw)?;
 
-        self.velocity.write_legacy(&mut write)?;
+        crate::legacy::write_legacy_velocity(&mut write, &self.velocity.0)?;
 
         if !v1_15 {
             if v1_9 {

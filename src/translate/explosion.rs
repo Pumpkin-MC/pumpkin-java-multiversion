@@ -1,7 +1,8 @@
 //! Explosions: EXPLODE.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_protocol::{
-    ClientPacket, IdOr, SoundEvent, VarInt,
+    IdOr, SoundEvent, VarInt,
     java::client::play::CExplosion,
     ser::{NetworkReadExt, NetworkWriteExt},
 };
@@ -77,7 +78,7 @@ pub fn explode_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -
             sound,
             block_particles_pool_size: VarInt(0),
         }
-        .write_packet_data(&mut out, &version)
+        .write_legacy(&mut out, &version)
         .ok()?;
         return Some(out);
     }
@@ -105,7 +106,9 @@ pub fn explode_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
     use pumpkin_data::{packet::CURRENT_MC_VERSION, particle::Particle};
+    use pumpkin_protocol::ClientPacket;
 
     use crate::remap::{
         particle_id_remap::remap_particle_id_for_version,
@@ -136,7 +139,7 @@ mod tests {
             remap_particle_id_for_version(particle, version),
             remap_sound_id_for_version(300, version),
         )
-        .write_packet_data(&mut expected, &version)
+        .write_legacy(&mut expected, &version)
         .unwrap();
         assert_eq!(explode_from_current(&current, version), Some(expected));
     }

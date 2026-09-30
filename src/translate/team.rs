@@ -1,8 +1,8 @@
 //! SET_PLAYER_TEAM.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
-    ClientPacket,
     java::client::play::{CSetPlayerTeam, TeamMethod, TeamParameters},
     ser::{NetworkReadExt, NetworkReadSliceExt},
 };
@@ -102,12 +102,14 @@ pub fn set_player_team_from_current(
         players: players.into_boxed_slice(),
     };
     let mut out = Vec::new();
-    packet.write_packet_data(&mut out, &version).ok()?;
+    packet.write_legacy(&mut out, &version).ok()?;
     Some(out)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
+    use pumpkin_protocol::ClientPacket;
     use pumpkin_util::text::TextComponent;
 
     use super::*;
@@ -141,7 +143,7 @@ mod tests {
                 JavaMinecraftVersion::V_1_12_2,
             ] {
                 let mut expected = Vec::new();
-                packet.write_packet_data(&mut expected, &version).unwrap();
+                packet.write_legacy(&mut expected, &version).unwrap();
                 let out = set_player_team_from_current(&payload, version).unwrap();
                 assert_eq!(out, expected, "{version:?} color {color}");
             }

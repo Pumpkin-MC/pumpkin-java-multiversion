@@ -1,7 +1,8 @@
 //! SET_TIME.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_protocol::{
-    ClientPacket, codec::var_long::VarLong, java::client::play::CUpdateTime, ser::NetworkReadExt,
+    codec::var_long::VarLong, java::client::play::CUpdateTime, ser::NetworkReadExt,
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
@@ -26,14 +27,16 @@ pub fn set_time_from_current(mut payload: &[u8], version: JavaMinecraftVersion) 
         game_time,
         clock_updates,
     }
-    .write_packet_data(&mut out, &version)
+    .write_legacy(&mut out, &version)
     .ok()?;
     Some(out)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
     use pumpkin_data::packet::CURRENT_MC_VERSION;
+    use pumpkin_protocol::ClientPacket;
 
     use super::*;
 
@@ -52,7 +55,7 @@ mod tests {
                 JavaMinecraftVersion::V_1_20,
             ] {
                 let mut expected = Vec::new();
-                packet.write_packet_data(&mut expected, &version).unwrap();
+                packet.write_legacy(&mut expected, &version).unwrap();
                 assert_eq!(set_time_from_current(&current, version), Some(expected));
             }
         }

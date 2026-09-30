@@ -1,7 +1,8 @@
 //! Payload translation between 26.3 and older clients, one file per encoding step.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_protocol::{ClientPacket, ServerPacket};
+use pumpkin_protocol::ServerPacket;
 use pumpkin_util::version::JavaMinecraftVersion;
 
 /// A component's encoding eras. Each variant starts at its version and lasts until the next
@@ -68,13 +69,13 @@ pub mod team;
 pub mod time;
 
 /// Reads `P` as 26.3 and writes it for `version`.
-pub(crate) fn reencode_current<'a, P: ServerPacket<'a> + ClientPacket>(
+pub(crate) fn reencode_current<'a, P: ServerPacket<'a> + LegacyWrite>(
     mut payload: &'a [u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
     let packet = P::read(&mut payload, &CURRENT_MC_VERSION).ok()?;
     let mut out = Vec::new();
-    packet.write_packet_data(&mut out, &version).ok()?;
+    packet.write_legacy(&mut out, &version).ok()?;
     Some(out)
 }
 

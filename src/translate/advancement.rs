@@ -1,5 +1,6 @@
 //! UPDATE_ADVANCEMENTS.
 
+use crate::legacy::LegacyWriteExt;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer,
@@ -48,8 +49,8 @@ pub fn update_advancements_from_current(
         if has_display {
             let title = payload.get_component(&current).ok()?;
             let description = payload.get_component(&current).ok()?;
-            out.write_component(&title, &version).ok()?;
-            out.write_component(&description, &version).ok()?;
+            out.write_component_legacy(&title, &version).ok()?;
+            out.write_component_legacy(&description, &version).ok()?;
             let icon = ItemStackSerializer::read_template0(&mut payload, &current)
                 .ok()?
                 .to_stack();
@@ -101,6 +102,7 @@ pub fn update_advancements_from_current(
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
     use pumpkin_data::Advancement;
     use pumpkin_protocol::{ClientPacket, java::client::play::CUpdateAdvancements};
 
@@ -133,7 +135,7 @@ mod tests {
                 .write_packet_data(&mut payload, &CURRENT_MC_VERSION)
                 .unwrap();
             let mut expected = Vec::new();
-            packet.write_packet_data(&mut expected, &version).unwrap();
+            packet.write_legacy(&mut expected, &version).unwrap();
             let out = update_advancements_from_current(&payload, version).unwrap();
             assert_eq!(out, expected, "{version:?}");
 

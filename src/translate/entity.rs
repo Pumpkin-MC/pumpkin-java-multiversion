@@ -1,5 +1,6 @@
 //! Entity spawning: ADD_ENTITY.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
@@ -99,13 +100,14 @@ pub fn add_entity_from_current(
         ..spawn_entity
     };
     let mut buf = Vec::new();
-    modified_spawn.write_packet_data(&mut buf, &version).ok()?;
+    modified_spawn.write_legacy(&mut buf, &version).ok()?;
     Some((mappings::clientbound::play::ADD_ENTITY.to_id(version), buf))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::legacy::LegacyWrite;
 
     #[test]
     fn standing_mob_gets_the_client_type() {
@@ -130,7 +132,7 @@ mod tests {
         let client_type = remap_entity_id_for_version(EntityType::WARDEN.id, version);
         let mut expected = Vec::new();
         spawn(client_type)
-            .write_packet_data(&mut expected, &version)
+            .write_legacy(&mut expected, &version)
             .unwrap();
         assert_eq!(
             add_entity_from_current(&current, version),

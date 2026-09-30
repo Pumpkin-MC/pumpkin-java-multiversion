@@ -1,8 +1,9 @@
 //! Particles: id and options, LEVEL_PARTICLES.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_data::particle::Particle;
 use pumpkin_protocol::{
-    ClientPacket, VarInt,
+    VarInt,
     java::client::play::CParticle,
     ser::{NetworkReadExt, NetworkWriteExt},
 };
@@ -201,7 +202,7 @@ pub fn level_particles_from_current(
         particle_id,
         particle,
     )
-    .write_packet_data(&mut out, &version)
+    .write_legacy(&mut out, &version)
     .ok()?;
     Some(out)
 }
@@ -209,6 +210,8 @@ pub fn level_particles_from_current(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::legacy::LegacyWrite;
+    use pumpkin_protocol::ClientPacket;
 
     #[test]
     fn dust_color_becomes_floats_before_1_21_2() {
@@ -262,7 +265,7 @@ mod tests {
         let id = remap_particle_id_for_version(Particle::Flame.to_id(), version);
         let mut expected = Vec::new();
         packet(VarInt(i32::from(id)))
-            .write_packet_data(&mut expected, &version)
+            .write_legacy(&mut expected, &version)
             .unwrap();
         assert_eq!(
             level_particles_from_current(&current, version),

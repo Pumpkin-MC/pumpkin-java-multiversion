@@ -1,7 +1,8 @@
 //! Entity animations: ANIMATE and SWING_ANIMATION.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_protocol::{
-    ClientPacket, VarInt,
+    VarInt,
     java::client::play::CSwingArm,
     ser::{NetworkReadExt, NetworkWriteExt},
 };
@@ -33,7 +34,7 @@ pub fn swing_from_current(
     let off_hand = payload.get_var_int().ok()? != VarInt(0);
     let mut out = Vec::new();
     CSwingArm::new(entity_id, off_hand)
-        .write_packet_data(&mut out, &version)
+        .write_legacy(&mut out, &version)
         .ok()?;
     // Core's ids are 26.3's
     Some((ANIMATE.to_id(version), out))

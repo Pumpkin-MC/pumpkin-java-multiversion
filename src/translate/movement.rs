@@ -1,8 +1,8 @@
 //! Entity movement: MOVE_ENTITY_POS, MOVE_ENTITY_POS_ROT, MOVE_ENTITY_ROT, ENTITY_POSITION_SYNC,
 //! SET_ENTITY_MOTION, PLAYER_ROTATION, PLAYER_POSITION.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_protocol::{
-    ClientPacket,
     codec::lp_vector_3d::LpVector3d,
     java::client::play::{
         CEntityPositionSync, CEntityVelocity, CPlayerPosition, CPlayerRotation, CUpdateEntityPos,
@@ -14,9 +14,9 @@ use pumpkin_util::{math::vector3::Vector3, version::JavaMinecraftVersion};
 
 use crate::packet::mappings::clientbound::play::{ENTITY_POSITION_SYNC, TELEPORT_ENTITY};
 
-fn write(packet: &impl ClientPacket, version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+fn write(packet: &impl LegacyWrite, version: JavaMinecraftVersion) -> Option<Vec<u8>> {
     let mut out = Vec::new();
-    packet.write_packet_data(&mut out, &version).ok()?;
+    packet.write_legacy(&mut out, &version).ok()?;
     Some(out)
 }
 
@@ -145,7 +145,9 @@ pub fn player_position_from_current(
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
     use pumpkin_data::packet::CURRENT_MC_VERSION;
+    use pumpkin_protocol::ClientPacket;
     use pumpkin_protocol::VarInt;
 
     use super::*;
@@ -157,7 +159,7 @@ mod tests {
     ];
 
     fn check(
-        packet: &impl ClientPacket,
+        packet: &impl LegacyWrite,
         translate: fn(&[u8], JavaMinecraftVersion) -> Option<Vec<u8>>,
     ) {
         let current = write(packet, CURRENT_MC_VERSION).unwrap();
@@ -235,7 +237,7 @@ mod tests {
                 .unwrap();
             let version = JavaMinecraftVersion::V_1_21_7;
             let mut expected = Vec::new();
-            packet.write_packet_data(&mut expected, &version).unwrap();
+            packet.write_legacy(&mut expected, &version).unwrap();
             assert_eq!(
                 entity_motion_from_current(&current, version),
                 Some(expected)
