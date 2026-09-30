@@ -1,6 +1,6 @@
 //! Pre-26.3 encodings from `pumpkin-protocol`'s `java/client/play/player_spawn_position.rs`.
 
-use crate::legacy::LegacyWrite;
+use crate::legacy::{LegacyWrite, LegacyWriteExt};
 use pumpkin_protocol::java::client::play::CPlayerSpawnPosition;
 use pumpkin_protocol::ser::{NetworkWriteExt, WritingError};
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -17,7 +17,7 @@ impl LegacyWrite for CPlayerSpawnPosition {
         }
 
         if *version >= JavaMinecraftVersion::V_1_8 {
-            write.write_block_pos(&self.location, version)?;
+            write.write_block_pos_legacy(&self.location, version)?;
         } else {
             write.write_i32_be(self.location.0.x)?;
             write.write_i32_be(self.location.0.y)?;

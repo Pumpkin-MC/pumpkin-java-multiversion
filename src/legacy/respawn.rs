@@ -1,6 +1,6 @@
 //! Pre-26.3 encodings from `pumpkin-protocol`'s `java/client/play/respawn.rs`.
 
-use crate::legacy::LegacyWrite;
+use crate::legacy::{LegacyWrite, LegacyWriteExt};
 use pumpkin_protocol::java::client::play::CRespawn;
 use pumpkin_protocol::ser::{NetworkWriteExt, WritingError};
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -72,7 +72,7 @@ impl LegacyWrite for CRespawn {
                     &self.player_spawn_info.death_dimension_name,
                     |write, (dim, pos)| {
                         write.write_string(dim)?;
-                        write.write_block_pos(pos, version)?;
+                        write.write_block_pos_legacy(pos, version)?;
                         Ok(())
                     },
                 )?;

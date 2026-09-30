@@ -7,7 +7,7 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
-use crate::legacy::LegacyWrite;
+use crate::legacy::{LegacyWrite, LegacyWriteExt};
 
 /// Game modes as var ints since 26.3, a byte and a signed byte before.
 /// Writes the current and previous game mode. Since 26.3 both are var ints and the previous game
@@ -55,7 +55,7 @@ impl LegacyWrite for PlayerSpawnData {
         if version >= &JavaMinecraftVersion::V_1_19 {
             write.write_option(&self.death_dimension_name, |write, (dim, pos)| {
                 write.write_string(dim)?;
-                write.write_block_pos(pos, version)?;
+                write.write_block_pos_legacy(pos, version)?;
                 Ok(())
             })?;
         }

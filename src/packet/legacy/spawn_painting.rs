@@ -1,3 +1,4 @@
+use crate::legacy::{LegacyReadExt, LegacyWriteExt};
 use crate::packet::mappings::clientbound::play::SPAWN_PAINTING;
 use crate::remap::painting_variant_id_remap::remap_motive_id_for_version;
 use pumpkin_protocol::{
@@ -65,7 +66,7 @@ impl ClientPacket for CSpawnPainting {
         }
 
         if *version >= JavaMinecraftVersion::V_1_8 {
-            write.write_block_pos(&self.location, version)?;
+            write.write_block_pos_legacy(&self.location, version)?;
             write.write_u8(self.direction)?;
         } else {
             write.write_i32_be(self.location.0.x)?;
@@ -96,7 +97,7 @@ impl<'a> ServerPacket<'a> for CSpawnPainting {
         };
 
         let (location, direction) = if *version >= JavaMinecraftVersion::V_1_8 {
-            let loc = bytebuf.get_block_pos(version)?;
+            let loc = bytebuf.get_block_pos_legacy(version)?;
             let dir = bytebuf.get_u8()?;
             (loc, dir)
         } else {

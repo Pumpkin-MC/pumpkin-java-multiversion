@@ -25,6 +25,7 @@ pub mod set_player_team;
 pub mod set_time;
 pub mod sound_effect;
 pub mod spawn_entity;
+pub mod text;
 pub mod update_advancement_write;
 pub mod update_attributes;
 pub mod update_entity_pos;
@@ -37,7 +38,7 @@ use pumpkin_protocol::{
     VarInt,
     ser::{NetworkReadExt, NetworkWriteExt, ReadingError, WritingError},
 };
-use pumpkin_util::{text::TextComponent, version::JavaMinecraftVersion};
+use pumpkin_util::{math::position::BlockPos, text::TextComponent, version::JavaMinecraftVersion};
 
 /// A core packet written for an older client.
 pub trait LegacyWrite {
@@ -65,7 +66,7 @@ pub trait LegacyWriteExt: NetworkWriteExt {
         version: &JavaMinecraftVersion,
     ) -> Result<(), WritingError> {
         if *version < JavaMinecraftVersion::V_1_20_3 {
-            let json = component.to_json_for_version(version);
+            let json = text::to_json(component, version);
             let max_len = if *version >= JavaMinecraftVersion::V_1_13 {
                 262_144
             } else {
@@ -73,8 +74,17 @@ pub trait LegacyWriteExt: NetworkWriteExt {
             };
             self.write_string_bounded(&json, max_len)
         } else {
-            self.write_slice(&component.encode_for_version(version))
+            self.write_slice(&text::encode(component, version))
         }
+    }
+
+    /// X, Y, Z before 1.14, X, Z, Y since.
+    fn write_block_pos_legacy(
+        &mut self,
+        pos: &BlockPos,
+        version: &JavaMinecraftVersion,
+    ) -> Result<(), WritingError> {
+        self.write_i64_be(block_pos_to_version(pos.as_long(), version))
     }
 
     /// A byte before 1.21.2, a var int since.
@@ -105,9 +115,40 @@ pub trait LegacyReadExt: NetworkReadExt {
             Ok(VarInt(i32::from(self.get_u8()?)))
         }
     }
+
+    /// X, Y, Z before 1.14, X, Z, Y since.
+    fn get_block_pos_legacy(
+        &mut self,
+        version: &JavaMinecraftVersion,
+    ) -> Result<BlockPos, ReadingError> {
+        Ok(BlockPos::from_i64(block_pos_to_current(
+            self.get_i64_be()?,
+            version,
+        )))
+    }
 }
 
 impl<R: NetworkReadExt> LegacyReadExt for R {}
+
+/// Repacks a current packed block position for the client.
+#[must_use]
+pub const fn block_pos_to_version(packed: i64, version: &JavaMinecraftVersion) -> i64 {
+    if (*version as u8) >= (JavaMinecraftVersion::V_1_14 as u8) {
+        return packed;
+    }
+    let (x, y, z) = (packed >> 38, packed << 52 >> 52, packed << 26 >> 38);
+    ((x & 0x03FF_FFFF) << 38) | ((y & 0xFFF) << 26) | (z & 0x03FF_FFFF)
+}
+
+/// Repacks a client's packed block position as current.
+#[must_use]
+pub const fn block_pos_to_current(packed: i64, version: &JavaMinecraftVersion) -> i64 {
+    if (*version as u8) >= (JavaMinecraftVersion::V_1_14 as u8) {
+        return packed;
+    }
+    let (x, y, z) = (packed >> 38, packed << 26 >> 52, packed << 38 >> 38);
+    ((x & 0x03FF_FFFF) << 38) | ((z & 0x03FF_FFFF) << 12) | (y & 0xFFF)
+}
 
 /// Equipment slot ids until 1.8: no off hand, so every armour slot is one lower.
 #[must_use]
@@ -159,4 +200,31 @@ pub fn write_legacy_velocity(
     write.write_i16_be(encode_legacy_velocity_component(velocity.x))?;
     write.write_i16_be(encode_legacy_velocity_component(velocity.y))?;
     write.write_i16_be(encode_legacy_velocity_component(velocity.z))
+}
+
+#[cfg(test)]
+mod tests {
+    use pumpkin_util::math::position::BlockPos;
+
+    use super::*;
+
+    #[test]
+    fn block_pos_is_x_y_z_before_1_14() {
+        let pos = BlockPos::new(-3, 70, 12);
+        let old = (((-3_i64) & 0x03FF_FFFF) << 38) | (70 << 26) | 12;
+        let mut out = Vec::new();
+        out.write_block_pos_legacy(&pos, &JavaMinecraftVersion::V_1_13_2)
+            .unwrap();
+        assert_eq!(out, old.to_be_bytes());
+        let mut read = &out[..];
+        assert_eq!(
+            read.get_block_pos_legacy(&JavaMinecraftVersion::V_1_13_2)
+                .unwrap(),
+            pos
+        );
+        assert_eq!(
+            block_pos_to_version(pos.as_long(), &JavaMinecraftVersion::V_1_14),
+            pos.as_long()
+        );
+    }
 }

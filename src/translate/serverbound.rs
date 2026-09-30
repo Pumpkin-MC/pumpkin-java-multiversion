@@ -1,6 +1,6 @@
 //! Serverbound play packets from older clients to 26.3.
 
-use crate::legacy::LegacyRead;
+use crate::legacy::{LegacyRead, block_pos_to_current};
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
     ClientPacket, VarInt,
@@ -179,7 +179,7 @@ pub fn play_to_current(
 
     // SIGN_UPDATE (26.3 moved the front flag after the lines as a var int)
     if new_id == play::SIGN_UPDATE.current() {
-        let pos_val = payload.get_i64_be().ok()?;
+        let pos_val = block_pos_to_current(payload.get_i64_be().ok()?, &version);
         let is_front = if SignFormat::of(version) == SignFormat::V1_20 {
             payload.get_bool().unwrap_or(true)
         } else {
@@ -207,7 +207,7 @@ pub fn play_to_current(
         } else {
             VarInt(i32::from(payload.get_u8().ok()?))
         };
-        let pos_val = payload.get_i64_be().ok()?;
+        let pos_val = block_pos_to_current(payload.get_i64_be().ok()?, &version);
         let face = payload.get_u8().ok()?;
         let sequence = if format == PlayerActionFormat::V1_19 {
             payload.get_var_int().unwrap_or(VarInt(0))

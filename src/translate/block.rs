@@ -14,6 +14,7 @@ use super::{
     ceil_log2,
     nbt::{split_network_nbt, write_network_nbt},
 };
+use crate::legacy::block_pos_to_version;
 use crate::remap::{
     block_entity_type_id_remap::remap_block_entity_type_id_for_version,
     block_state_remap::remap_block_state_for_version,
@@ -55,7 +56,8 @@ pub fn block_update_from_current(
     let position = payload.get_i64_be().ok()?;
     let state = payload.get_var_int().ok()?.0 as u32;
     let mut out = Vec::new();
-    out.write_i64_be(position).ok()?;
+    out.write_i64_be(block_pos_to_version(position, &version))
+        .ok()?;
     out.write_var_int(&VarInt(remap_state(state, version) as i32))
         .ok()?;
     Some(out)

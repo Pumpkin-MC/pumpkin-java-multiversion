@@ -66,15 +66,12 @@ impl LegacyWrite for CSetPlayerTeam<'_> {
                 write.write_component_legacy(params.player_prefix, version)?;
                 write.write_component_legacy(params.player_suffix, version)?;
             } else {
-                let display_name_legacy = params
-                    .display_name
-                    .to_legacy_string_for_version(version, Locale::EnUs);
-                let player_prefix_legacy = params
-                    .player_prefix
-                    .to_legacy_string_for_version(version, Locale::EnUs);
-                let player_suffix_legacy = params
-                    .player_suffix
-                    .to_legacy_string_for_version(version, Locale::EnUs);
+                let display_name_legacy =
+                    super::text::to_legacy_string(params.display_name, version, Locale::EnUs);
+                let player_prefix_legacy =
+                    super::text::to_legacy_string(params.player_prefix, version, Locale::EnUs);
+                let player_suffix_legacy =
+                    super::text::to_legacy_string(params.player_suffix, version, Locale::EnUs);
 
                 write.write_string_bounded(&display_name_legacy, 32)?;
                 write.write_string_bounded(&player_prefix_legacy, 32)?;

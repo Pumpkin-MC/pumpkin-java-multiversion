@@ -1,3 +1,4 @@
+use crate::legacy::{LegacyReadExt, LegacyWriteExt};
 use std::io::Write;
 
 use crate::packet::mappings::clientbound::play::USE_BED;
@@ -43,7 +44,7 @@ impl ClientPacket for CUseBed {
     ) -> Result<(), WritingError> {
         if *version >= JavaMinecraftVersion::V_1_8 {
             write.write_var_int(&self.entity_id)?;
-            write.write_block_pos(&self.location, version)?;
+            write.write_block_pos_legacy(&self.location, version)?;
         } else {
             write.write_i32_be(self.entity_id.0)?;
             write.write_i32_be(self.location.0.x)?;
@@ -59,7 +60,7 @@ impl<'a> ServerPacket<'a> for CUseBed {
     fn read(read: &mut &'a [u8], version: &JavaMinecraftVersion) -> Result<Self, ReadingError> {
         if *version >= JavaMinecraftVersion::V_1_8 {
             let entity_id = read.get_var_int()?;
-            let location = read.get_block_pos(version)?;
+            let location = read.get_block_pos_legacy(version)?;
             Ok(Self {
                 entity_id,
                 location,
