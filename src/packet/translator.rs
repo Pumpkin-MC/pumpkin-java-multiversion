@@ -78,6 +78,69 @@ pub const fn from_wasm_java_version(
     }
 }
 
+/// Converts the internal `pumpkin_util` version into the WIT-generated one.
+#[must_use]
+pub const fn to_wasm_java_version(
+    version: JavaMinecraftVersion,
+) -> pumpkin_plugin_api::wit::pumpkin::plugin::player::JavaMinecraftVersion {
+    use pumpkin_plugin_api::wit::pumpkin::plugin::player::JavaMinecraftVersion as W;
+    match version {
+        JavaMinecraftVersion::V_1_7_2 => W::V172,
+        JavaMinecraftVersion::V_1_7_6 => W::V176,
+        JavaMinecraftVersion::V_1_8 => W::V18,
+        JavaMinecraftVersion::V_1_9 => W::V19,
+        JavaMinecraftVersion::V_1_9_1 => W::V191,
+        JavaMinecraftVersion::V_1_9_2 => W::V192,
+        JavaMinecraftVersion::V_1_9_3 => W::V193,
+        JavaMinecraftVersion::V_1_10 => W::V110,
+        JavaMinecraftVersion::V_1_11 => W::V111,
+        JavaMinecraftVersion::V_1_11_1 => W::V1111,
+        JavaMinecraftVersion::V_1_12 => W::V112,
+        JavaMinecraftVersion::V_1_12_1 => W::V1121,
+        JavaMinecraftVersion::V_1_12_2 => W::V1122,
+        JavaMinecraftVersion::V_1_13 => W::V113,
+        JavaMinecraftVersion::V_1_13_1 => W::V1131,
+        JavaMinecraftVersion::V_1_13_2 => W::V1132,
+        JavaMinecraftVersion::V_1_14 => W::V114,
+        JavaMinecraftVersion::V_1_14_1 => W::V1141,
+        JavaMinecraftVersion::V_1_14_2 => W::V1142,
+        JavaMinecraftVersion::V_1_14_3 => W::V1143,
+        JavaMinecraftVersion::V_1_14_4 => W::V1144,
+        JavaMinecraftVersion::V_1_15 => W::V115,
+        JavaMinecraftVersion::V_1_15_1 => W::V1151,
+        JavaMinecraftVersion::V_1_15_2 => W::V1152,
+        JavaMinecraftVersion::V_1_16 => W::V116,
+        JavaMinecraftVersion::V_1_16_1 => W::V1161,
+        JavaMinecraftVersion::V_1_16_2 => W::V1162,
+        JavaMinecraftVersion::V_1_16_3 => W::V1163,
+        JavaMinecraftVersion::V_1_16_4 => W::V1164,
+        JavaMinecraftVersion::V_1_17 => W::V117,
+        JavaMinecraftVersion::V_1_17_1 => W::V1171,
+        JavaMinecraftVersion::V_1_18 => W::V118,
+        JavaMinecraftVersion::V_1_18_2 => W::V1182,
+        JavaMinecraftVersion::V_1_19 => W::V119,
+        JavaMinecraftVersion::V_1_19_1 => W::V1191,
+        JavaMinecraftVersion::V_1_19_3 => W::V1193,
+        JavaMinecraftVersion::V_1_19_4 => W::V1194,
+        JavaMinecraftVersion::V_1_20 => W::V120,
+        JavaMinecraftVersion::V_1_20_2 => W::V1202,
+        JavaMinecraftVersion::V_1_20_3 => W::V1203,
+        JavaMinecraftVersion::V_1_20_5 => W::V1205,
+        JavaMinecraftVersion::V_1_21 => W::V121,
+        JavaMinecraftVersion::V_1_21_2 => W::V1212,
+        JavaMinecraftVersion::V_1_21_4 => W::V1214,
+        JavaMinecraftVersion::V_1_21_5 => W::V1215,
+        JavaMinecraftVersion::V_1_21_6 => W::V1216,
+        JavaMinecraftVersion::V_1_21_7 => W::V1217,
+        JavaMinecraftVersion::V_1_21_9 => W::V1219,
+        JavaMinecraftVersion::V_1_21_11 => W::V12111,
+        JavaMinecraftVersion::V_26_1 => W::V261,
+        JavaMinecraftVersion::V_26_2 => W::V262,
+        JavaMinecraftVersion::V_26_3 => W::V263,
+        JavaMinecraftVersion::Unknown => W::Unknown,
+    }
+}
+
 pub static SERVERBOUND_HANDSHAKE: &[&PacketId] = &[&mappings::serverbound::handshake::INTENTION];
 
 pub static SERVERBOUND_STATUS: &[&PacketId] = &[

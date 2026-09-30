@@ -20,7 +20,7 @@ use pumpkin_plugin_api::{
 };
 
 use crate::packet::mappings;
-use crate::packet::translator::{PacketTranslator, from_wasm_java_version};
+use crate::packet::translator::{PacketTranslator, from_wasm_java_version, to_wasm_java_version};
 use crate::translate::tags;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -72,6 +72,13 @@ impl Plugin for MultiVersionPlugin {
     fn on_load(&self, context: Context) -> Result<(), String> {
         tracing::info!("Loading Pumpkin Java Multi-Version Plugin...");
 
+        let versions: Vec<_> = JavaMinecraftVersion::KNOWN
+            .iter()
+            .filter(|&&version| version != CURRENT_MC_VERSION)
+            .map(|&version| to_wasm_java_version(version))
+            .collect();
+        context.register_java_versions(&versions);
+
         // Register packet event handlers with High priority to translate before/after game logic
         context.register_event_handler(PacketReceivedHandler, EventPriority::Highest, true)?;
 
@@ -85,7 +92,10 @@ impl Plugin for MultiVersionPlugin {
         )?;
         context.register_event_handler(ConnectionPacketSentHandler, EventPriority::Lowest, true)?;
 
-        tracing::info!("Pumpkin Java Multi-Version Plugin enabled! Supporting 1.7.2 - 26.3");
+        tracing::info!(
+            "Pumpkin Java Multi-Version Plugin enabled! Supporting {}-{CURRENT_MC_VERSION}",
+            JavaMinecraftVersion::OLDEST
+        );
         Ok(())
     }
 
