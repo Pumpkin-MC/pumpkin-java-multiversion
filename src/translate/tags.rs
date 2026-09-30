@@ -2,9 +2,10 @@
 
 use std::{cell::OnceCell, collections::HashMap};
 
-use pumpkin_data::{Block, BlockId, entity::EntityType, item::Item};
+use pumpkin_data::{Block, BlockId, entity::EntityType, item::Item, packet::CURRENT_MC_VERSION};
 use pumpkin_protocol::{
-    VarInt,
+    ClientPacket, VarInt,
+    java::client::play::CUpdateTagsPlay,
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},
 };
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -191,10 +192,69 @@ pub fn update_tags_from_current(
     Some(out)
 }
 
+/// Registries of the fixed layout before 1.17, in order. Entity types since 1.14.
+const LEGACY_CATEGORIES: [&str; 4] = [
+    "minecraft:block",
+    "minecraft:item",
+    "minecraft:fluid",
+    "minecraft:entity_type",
+];
+
+/// Play UPDATE_TAGS. Before 1.17 the registries are the fixed [`LEGACY_CATEGORIES`] without
+/// their names.
+pub fn play_update_tags_from_current(
+    payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<Vec<u8>> {
+    let translated = update_tags_from_current(payload, version)?;
+    if version >= JavaMinecraftVersion::V_1_17 {
+        return Some(translated);
+    }
+
+    // Each registry's tag list, which is the category layout as is.
+    let mut registries = HashMap::new();
+    let mut reader = &translated[..];
+    for _ in 0..reader.get_var_int().ok()?.0 {
+        let name = reader.get_str_borrowed().ok()?;
+        let start = reader;
+        for _ in 0..reader.get_var_int().ok()?.0 {
+            let _ = reader.get_str_borrowed().ok()?;
+            let _ = reader.get_list(|read| read.get_var_int()).ok()?;
+        }
+        registries.insert(name, &start[..start.len() - reader.len()]);
+    }
+
+    let categories = if version >= JavaMinecraftVersion::V_1_14 {
+        &LEGACY_CATEGORIES[..]
+    } else {
+        &LEGACY_CATEGORIES[..3]
+    };
+    let mut out = Vec::new();
+    for category in categories {
+        match registries.get(category) {
+            Some(tags) => out.extend_from_slice(tags),
+            None => out.write_var_int(&VarInt(0)).ok()?,
+        }
+    }
+    Some(out)
+}
+
+/// Before 1.20.2 there is no configuration state, so vanilla sends the tags in play right
+/// after the join packet. `None` for clients that get them in configuration or have none.
+pub fn join_tags(version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+    if !(JavaMinecraftVersion::V_1_13..JavaMinecraftVersion::V_1_20_2).contains(&version) {
+        return None;
+    }
+    let mut current = Vec::new();
+    CUpdateTagsPlay::new(pumpkin_data::tag::RegistryKey::NETWORK_KEYS)
+        .write_packet_data(&mut current, &CURRENT_MC_VERSION)
+        .ok()?;
+    play_update_tags_from_current(&current, version)
+}
+
 #[cfg(test)]
 mod tests {
-    use pumpkin_data::packet::CURRENT_MC_VERSION;
-    use pumpkin_protocol::{ClientPacket, java::client::config::CUpdateTags};
+    use pumpkin_protocol::java::client::config::CUpdateTags;
 
     use super::*;
 
@@ -219,6 +279,28 @@ mod tests {
             .write_packet_data(&mut current, &CURRENT_MC_VERSION)
             .unwrap();
         current
+    }
+
+    #[test]
+    fn join_tags_only_before_the_configuration_state() {
+        assert!(join_tags(JavaMinecraftVersion::V_1_12_2).is_none());
+        assert!(join_tags(JavaMinecraftVersion::V_1_13).is_some());
+        assert!(join_tags(JavaMinecraftVersion::V_1_20).is_some());
+        assert!(join_tags(JavaMinecraftVersion::V_1_20_2).is_none());
+    }
+
+    /// 1.14 - 1.16: block, item, fluid and entity type lists, no registry names.
+    #[test]
+    fn legacy_play_tags_are_the_fixed_categories() {
+        let mut payload = &join_tags(JavaMinecraftVersion::V_1_16_4).unwrap()[..];
+        for _ in 0..4 {
+            for _ in 0..payload.get_var_int().unwrap().0 {
+                let tag = payload.get_str_borrowed().unwrap();
+                assert!(!tag.is_empty());
+                let _ = payload.get_list(|read| read.get_var_int()).unwrap();
+            }
+        }
+        assert!(payload.is_empty());
     }
 
     #[test]

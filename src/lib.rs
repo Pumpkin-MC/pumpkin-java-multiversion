@@ -13,14 +13,40 @@ use pumpkin_plugin_api::{
         },
     },
     events_wit::{
-        ConnectionPacketReceivedEventData, ConnectionPacketSentEventData, PacketReceivedEventData,
-        PacketSentEventData,
+        ConnectionPacketReceivedEventData, ConnectionPacketSentEventData, JavaConnectionFeatures,
+        PacketReceivedEventData, PacketSentEventData, RawPacket,
     },
     register_plugin,
 };
 
+use crate::packet::mappings;
 use crate::packet::translator::{PacketTranslator, from_wasm_java_version};
+use crate::translate::tags;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
+use pumpkin_util::version::JavaMinecraftVersion;
+
+/// What the client's protocol has beyond the packet format.
+fn connection_features(version: JavaMinecraftVersion) -> JavaConnectionFeatures {
+    [
+        (
+            version >= JavaMinecraftVersion::V_1_20_2,
+            JavaConnectionFeatures::CONFIGURATION_STATE | JavaConnectionFeatures::CHUNK_BATCH_ACKS,
+        ),
+        (
+            version >= JavaMinecraftVersion::V_1_21_4,
+            JavaConnectionFeatures::PLAYER_LOADED,
+        ),
+        (
+            (JavaMinecraftVersion::V_1_19_3..JavaMinecraftVersion::V_1_20_2).contains(&version),
+            JavaConnectionFeatures::OPTIONAL_VERIFY_TOKEN,
+        ),
+    ]
+    .into_iter()
+    .filter(|(has, _)| *has)
+    .fold(JavaConnectionFeatures::empty(), |features, (_, flags)| {
+        features | flags
+    })
+}
 
 /// The multi-version plugin allowing Minecraft Java clients across versions (1.7 - 26.2)
 /// to connect to a Pumpkin 26.3 server.
@@ -88,6 +114,7 @@ impl EventHandler<PacketReceivedEvent> for PacketReceivedHandler {
                 event.packet_id,
                 &event.raw_payload,
                 version,
+                || (event.player.get_yaw(), event.player.get_pitch()),
             ) {
                 Some((new_id, new_payload)) => {
                     event.packet_id = new_id;
@@ -110,6 +137,7 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
             if version == CURRENT_MC_VERSION {
                 return event;
             }
+            let is_join = event.packet_id == mappings::clientbound::play::LOGIN.current();
             // A current id means a different packet to the client, so drop what has none
             match PacketTranslator::translate_outgoing_packet(
                 event.packet_id,
@@ -121,6 +149,16 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
                     event.raw_payload = new_payload;
                 }
                 None => event.cancelled = true,
+            }
+            if is_join
+                && !event.cancelled
+                && let Some(payload) = tags::join_tags(version)
+                && let Some(packet_id) = PacketTranslator::translate_clientbound_packet_id(
+                    mappings::clientbound::play::UPDATE_TAGS.current(),
+                    version,
+                )
+            {
+                event.extra_packets.push(RawPacket { packet_id, payload });
             }
         }
         event
@@ -140,6 +178,7 @@ impl EventHandler<ConnectionPacketReceivedEvent> for ConnectionPacketReceivedHan
         if version == CURRENT_MC_VERSION {
             return event;
         }
+        event.features = connection_features(version);
         match PacketTranslator::translate_connection_incoming(
             event.state,
             event.packet_id,

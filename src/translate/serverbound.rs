@@ -132,11 +132,13 @@ pub fn interact_to_current(
 }
 
 /// `None` when the payload is already in the 26.3 format. Only called for clients below 26.3.
+/// `rotation` is the player's yaw and pitch, for packets that did not carry them yet.
 #[expect(clippy::too_many_lines)]
 pub fn play_to_current(
     new_id: i32,
     mut payload: &[u8],
     version: JavaMinecraftVersion,
+    rotation: impl FnOnce() -> (f32, f32),
 ) -> Option<Vec<u8>> {
     // PUNCH / SWING (26.3 punch has 0 bytes)
     if new_id == play::PUNCH.current() {
@@ -156,7 +158,7 @@ pub fn play_to_current(
         return Some(out);
     }
 
-    // USE_ITEM
+    // USE_ITEM (before 1.21 the server used the player's rotation)
     let use_item = UseItemFormat::of(version);
     if new_id == play::USE_ITEM.current() && use_item != UseItemFormat::V1_21 {
         let hand = payload.get_var_int().ok()?;
@@ -165,11 +167,12 @@ pub fn play_to_current(
         } else {
             VarInt(0)
         };
+        let (yaw, pitch) = rotation();
         let mut out = Vec::new();
         let _ = out.write_var_int(&hand);
         let _ = out.write_var_int(&sequence);
-        let _ = out.write_f32_be(0.0);
-        let _ = out.write_f32_be(0.0);
+        let _ = out.write_f32_be(yaw);
+        let _ = out.write_f32_be(pitch);
         return Some(out);
     }
 

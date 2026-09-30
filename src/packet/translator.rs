@@ -588,11 +588,13 @@ impl PacketTranslator {
 
     /// Translates an incoming packet (from an older client to 26.3).
     /// Returns the normalized 26.3 packet ID and potentially translated payload.
+    /// `rotation` is the player's yaw and pitch, only read for packets that lack them.
     #[must_use]
     pub fn translate_incoming_packet(
         packet_id: i32,
         raw_payload: &[u8],
         version: JavaMinecraftVersion,
+        rotation: impl FnOnce() -> (f32, f32),
     ) -> Option<(i32, Vec<u8>)> {
         if version == CURRENT_MC_VERSION {
             return None;
@@ -611,8 +613,9 @@ impl PacketTranslator {
             return inventory::container_click_to_current(raw_payload, version)
                 .map(|payload| (new_id, payload));
         }
-        let translated_payload = serverbound::play_to_current(new_id, raw_payload, version)
-            .unwrap_or_else(|| raw_payload.to_vec());
+        let translated_payload =
+            serverbound::play_to_current(new_id, raw_payload, version, rotation)
+                .unwrap_or_else(|| raw_payload.to_vec());
         Some((new_id, translated_payload))
     }
 
@@ -809,6 +812,7 @@ impl PacketTranslator {
                 recipe::place_ghost_recipe_from_current
             }
             id if id == play::UPDATE_RECIPES.current() => recipe::update_recipes_from_current,
+            id if id == play::UPDATE_TAGS.current() => tags::play_update_tags_from_current,
             id if id == play::BLOCK_UPDATE.current() => block::block_update_from_current,
             id if id == play::BLOCK_ENTITY_DATA.current() => block::block_entity_data_from_current,
             id if id == play::SECTION_BLOCKS_UPDATE.current() => {
