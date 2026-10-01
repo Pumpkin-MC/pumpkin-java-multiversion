@@ -25,7 +25,7 @@ pub fn game_event_from_current(payload: &[u8], version: JavaMinecraftVersion) ->
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_data::packet::CURRENT_MC_VERSION;
+
     use pumpkin_protocol::{ClientPacket, java::client::play::CGameEvent};
 
     use super::*;
@@ -33,7 +33,7 @@ mod tests {
     fn payload(event: GameEvent) -> Vec<u8> {
         let mut out = Vec::new();
         CGameEvent::new(event, 0.0)
-            .write_packet_data(&mut out, &CURRENT_MC_VERSION)
+            .write_packet_data(&mut out)
             .unwrap();
         out
     }

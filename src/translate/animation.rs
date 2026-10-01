@@ -1,14 +1,12 @@
 //! Entity animations: ANIMATE and SWING_ANIMATION.
 
-use crate::legacy::LegacyWrite;
+use pumpkin_protocol::java::legacy::{LegacyPacket, LegacyWrite};
 use pumpkin_protocol::{
     VarInt,
     java::client::play::CSwingArm,
     ser::{NetworkReadExt, NetworkWriteExt},
 };
 use pumpkin_util::version::JavaMinecraftVersion;
-
-use crate::packet::mappings::clientbound::play::ANIMATE;
 
 /// ANIMATE: 26.3 renumbered the animations left after moving the swings out.
 pub fn animate_from_current(mut payload: &[u8], _version: JavaMinecraftVersion) -> Option<Vec<u8>> {
@@ -36,6 +34,5 @@ pub fn swing_from_current(
     CSwingArm::new(entity_id, off_hand)
         .write_legacy(&mut out, &version)
         .ok()?;
-    // Core's ids are 26.3's
-    Some((ANIMATE.to_id(version), out))
+    Some((CSwingArm::legacy_id(version)?, out))
 }

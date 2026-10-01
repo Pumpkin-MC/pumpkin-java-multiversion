@@ -1,18 +1,18 @@
 //! Player spawn info: play LOGIN, RESPAWN and SET_DEFAULT_SPAWN_POSITION.
 
-use crate::legacy::LegacyWrite;
-use pumpkin_data::{entity::EntityType, packet::CURRENT_MC_VERSION};
+use pumpkin_data::entity::EntityType;
+use pumpkin_protocol::java::legacy::{LegacyWrite, LegacyWriteWith};
 use pumpkin_protocol::{
+    ServerPacket,
     java::client::play::{CLogin, CPlayerSpawnPosition, CRespawn, PlayerSpawnData},
     ser::{NetworkReadExt, NetworkReadSliceExt},
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
-use super::{entity_data, reencode_current};
+use super::{entity_data, registry};
 
 /// LOGIN (play): game modes are var ints since 26.3, online mode added in 26.2.
 pub fn login_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
-    let current = CURRENT_MC_VERSION;
     let entity_id = payload.get_i32_be().ok()?;
     // The own player never gets an ADD_ENTITY
     entity_data::track_spawn(entity_id, EntityType::PLAYER.id);
@@ -26,7 +26,7 @@ pub fn login_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> 
     let reduced_debug_info = payload.get_bool().ok()?;
     let enabled_respawn_screen = payload.get_bool().ok()?;
     let limited_crafting = payload.get_bool().ok()?;
-    let spawn_data = PlayerSpawnData::read(&mut payload, &current).ok()?;
+    let spawn_data = PlayerSpawnData::read(&mut payload).ok()?;
     let online_mode = payload.get_bool().ok()?;
     let enforce_secure_chat = payload.get_bool().ok()?;
 
@@ -44,14 +44,23 @@ pub fn login_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> 
         online_mode,
         enforce_secure_chat,
     };
+    let registry = registry::legacy_nbt(version, packet.spawn_data.dimension.minecraft_name);
     let mut out = Vec::new();
-    packet.write_legacy(&mut out, &version).ok()?;
+    packet
+        .write_legacy_with(&mut out, &version, &registry)
+        .ok()?;
     Some(out)
 }
 
 /// RESPAWN: same game mode change as LOGIN.
-pub fn respawn_from_current(payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
-    reencode_current::<CRespawn>(payload, version)
+pub fn respawn_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
+    let packet = CRespawn::read(&mut payload).ok()?;
+    let registry = registry::legacy_nbt(version, packet.player_spawn_info.dimension.minecraft_name);
+    let mut out = Vec::new();
+    packet
+        .write_legacy_with(&mut out, &version, &registry)
+        .ok()?;
+    Some(out)
 }
 
 /// SET_DEFAULT_SPAWN_POSITION: dimension and pitch since 1.21.9, angle since 1.17, packed
@@ -73,9 +82,9 @@ pub fn spawn_position_from_current(
 
 #[cfg(test)]
 mod tests {
-    use crate::legacy::LegacyWrite;
     use pumpkin_protocol::ClientPacket;
     use pumpkin_protocol::VarInt;
+    use pumpkin_protocol::java::legacy::LegacyWrite;
 
     use super::*;
 
@@ -107,12 +116,12 @@ mod tests {
             enforce_secure_chat: false,
         };
         let mut payload = Vec::new();
-        packet
-            .write_packet_data(&mut payload, &CURRENT_MC_VERSION)
-            .unwrap();
+        packet.write_packet_data(&mut payload).unwrap();
         let mut expected = Vec::new();
+        let version = JavaMinecraftVersion::V_1_21_11;
+        let registry = registry::legacy_nbt(version, packet.spawn_data.dimension.minecraft_name);
         packet
-            .write_legacy(&mut expected, &JavaMinecraftVersion::V_1_21_11)
+            .write_legacy_with(&mut expected, &version, &registry)
             .unwrap();
         let out = login_from_current(&payload, JavaMinecraftVersion::V_1_21_11).unwrap();
         assert_eq!(out, expected);
@@ -131,9 +140,7 @@ mod tests {
             )
         };
         let mut current = Vec::new();
-        packet()
-            .write_packet_data(&mut current, &CURRENT_MC_VERSION)
-            .unwrap();
+        packet().write_packet_data(&mut current).unwrap();
         for version in [
             JavaMinecraftVersion::V_1_21_7,
             JavaMinecraftVersion::V_1_16,

@@ -1,6 +1,6 @@
 //! SET_PLAYER_TEAM.
 
-use crate::legacy::LegacyWrite;
+use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     java::client::play::{CSetPlayerTeam, TeamMethod, TeamParameters},
     ser::{NetworkReadExt, NetworkReadSliceExt},
@@ -106,9 +106,9 @@ pub fn set_player_team_from_current(
 
 #[cfg(test)]
 mod tests {
-    use crate::legacy::LegacyWrite;
-    use pumpkin_data::packet::CURRENT_MC_VERSION;
+
     use pumpkin_protocol::ClientPacket;
+    use pumpkin_protocol::java::legacy::LegacyWrite;
     use pumpkin_util::text::TextComponent;
 
     use super::*;
@@ -134,9 +134,7 @@ mod tests {
                 players: vec!["Steve".to_string(), "Alex".to_string()].into_boxed_slice(),
             };
             let mut payload = Vec::new();
-            packet
-                .write_packet_data(&mut payload, &CURRENT_MC_VERSION)
-                .unwrap();
+            packet.write_packet_data(&mut payload).unwrap();
             for version in [
                 JavaMinecraftVersion::V_1_21_11,
                 JavaMinecraftVersion::V_1_12_2,

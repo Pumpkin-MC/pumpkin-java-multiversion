@@ -2,7 +2,7 @@
 
 use std::{cell::OnceCell, collections::HashMap};
 
-use pumpkin_data::{Block, BlockId, entity::EntityType, item::Item, packet::CURRENT_MC_VERSION};
+use pumpkin_data::{Block, BlockId, entity::EntityType, item::Item};
 use pumpkin_protocol::{
     ClientPacket, VarInt,
     java::client::play::CUpdateTagsPlay,
@@ -247,7 +247,7 @@ pub fn join_tags(version: JavaMinecraftVersion) -> Option<Vec<u8>> {
     }
     let mut current = Vec::new();
     CUpdateTagsPlay::new(pumpkin_data::tag::RegistryKey::NETWORK_KEYS)
-        .write_packet_data(&mut current, &CURRENT_MC_VERSION)
+        .write_packet_data(&mut current)
         .ok()?;
     play_update_tags_from_current(&current, version)
 }
@@ -276,7 +276,7 @@ mod tests {
     fn current() -> Vec<u8> {
         let mut current = Vec::new();
         CUpdateTags::new(pumpkin_data::tag::RegistryKey::NETWORK_KEYS)
-            .write_packet_data(&mut current, &CURRENT_MC_VERSION)
+            .write_packet_data(&mut current)
             .unwrap();
         current
     }

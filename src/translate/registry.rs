@@ -1,5 +1,6 @@
 //! Synced registries of older clients. Core only knows 26.3's.
 
+use pumpkin_protocol::java::legacy::LegacyRegistryNbt;
 use pumpkin_protocol::{
     VarInt,
     ser::{NetworkReadSliceExt, NetworkWriteExt},
@@ -86,6 +87,15 @@ pub fn login_codec(version: JavaMinecraftVersion) -> Option<&'static [u8]> {
         D::V1_20 => LOGIN_CODEC_1_20,
         _ => return None,
     })
+}
+
+/// The registry NBT that older login and respawn packets embed for `dimension`.
+#[must_use]
+pub fn legacy_nbt(version: JavaMinecraftVersion, dimension: &str) -> LegacyRegistryNbt<'static> {
+    LegacyRegistryNbt {
+        login_codec: login_codec(version),
+        dimension_type: dimension_type_nbt(version, dimension),
+    }
 }
 
 /// The dimension type of `dimension` as named NBT, for the login and respawn packets of

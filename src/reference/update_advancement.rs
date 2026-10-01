@@ -1,4 +1,3 @@
-#![cfg(test)]
 //! Pre-26.3 encoding from `pumpkin-protocol`'s `java/client/play/update_advancement.rs`, as a
 //! test reference for 1.20.5 and later (older item layouts are not reproduced).
 
@@ -10,9 +9,10 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
-use crate::legacy::{LegacyWrite, LegacyWriteExt};
+use super::ReferenceWrite;
+use pumpkin_protocol::java::legacy::LegacyWriteExt;
 
-impl LegacyWrite for CUpdateAdvancements {
+impl ReferenceWrite for CUpdateAdvancements {
     fn write_legacy(
         &self,
         mut write: impl std::io::Write,

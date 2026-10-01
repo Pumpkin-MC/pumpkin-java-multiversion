@@ -1,6 +1,6 @@
 //! UPDATE_ADVANCEMENTS.
 
-use crate::legacy::LegacyWriteExt;
+use pumpkin_protocol::java::legacy::LegacyWriteExt;
 use pumpkin_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer,
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},
@@ -100,9 +100,9 @@ pub fn update_advancements_from_current(
 
 #[cfg(test)]
 mod tests {
-    use crate::legacy::LegacyWrite;
+    use crate::reference::ReferenceWrite;
     use pumpkin_data::Advancement;
-    use pumpkin_data::packet::CURRENT_MC_VERSION;
+
     use pumpkin_protocol::{ClientPacket, java::client::play::CUpdateAdvancements};
 
     use super::*;
@@ -130,9 +130,7 @@ mod tests {
             assert!(!same_icon.is_empty());
             let packet = CUpdateAdvancements::new(true, same_icon, Vec::new(), Vec::new(), true);
             let mut payload = Vec::new();
-            packet
-                .write_packet_data(&mut payload, &CURRENT_MC_VERSION)
-                .unwrap();
+            packet.write_packet_data(&mut payload).unwrap();
             let mut expected = Vec::new();
             packet.write_legacy(&mut expected, &version).unwrap();
             let out = update_advancements_from_current(&payload, version).unwrap();
@@ -140,9 +138,7 @@ mod tests {
 
             let packet = CUpdateAdvancements::new(true, all.to_vec(), Vec::new(), Vec::new(), true);
             let mut payload = Vec::new();
-            packet
-                .write_packet_data(&mut payload, &CURRENT_MC_VERSION)
-                .unwrap();
+            packet.write_packet_data(&mut payload).unwrap();
             assert!(update_advancements_from_current(&payload, version).is_some());
         }
     }

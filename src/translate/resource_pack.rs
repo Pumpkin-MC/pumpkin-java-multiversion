@@ -1,6 +1,6 @@
 //! Resource pack push (clientbound) and response (serverbound).
 
-use crate::legacy::LegacyWrite;
+use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     java::client::config::CConfigAddResourcePack,
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},

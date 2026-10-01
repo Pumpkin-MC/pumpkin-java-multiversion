@@ -1,6 +1,6 @@
 //! Sounds: SOUND, SOUND_ENTITY and STOP_SOUND.
 
-use crate::legacy::LegacyWrite;
+use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     IdOr, SoundEvent, VarInt,
     java::client::play::{CEntitySoundEffect, CSoundEffect},

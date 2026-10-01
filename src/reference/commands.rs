@@ -1,7 +1,6 @@
-#![cfg(test)]
 //! Pre-26.3 encodings from `pumpkin-protocol`'s `java/client/play/commands.rs`.
 
-use crate::legacy::LegacyWrite;
+use super::ReferenceWrite;
 use pumpkin_protocol::java::client::play::{
     ArgumentType, CCommands, ProtoNode, ProtoNodeType, StringProtoArgBehavior, SuggestionProviders,
 };
@@ -10,7 +9,7 @@ use pumpkin_util::identifier::Identifier;
 use pumpkin_util::version::JavaMinecraftVersion;
 use std::io::Write;
 
-impl LegacyWrite for CCommands<'_> {
+impl ReferenceWrite for CCommands<'_> {
     fn write_legacy(
         &self,
         write: impl Write,
@@ -18,7 +17,7 @@ impl LegacyWrite for CCommands<'_> {
     ) -> Result<(), WritingError> {
         let mut write = write;
         write.write_list(&self.nodes, |bytebuf, node: &ProtoNode| {
-            node.write_to_legacy(bytebuf, version)
+            node.write_to_legacy(bytebuf, *version)
         })?;
         write.write_var_int(&self.root_node_index)
     }
@@ -42,7 +41,7 @@ trait LegacyProtoNode {
     fn write_to_legacy(
         &self,
         bytebuf: &mut impl Write,
-        version: &JavaMinecraftVersion,
+        version: JavaMinecraftVersion,
     ) -> Result<(), WritingError>;
 }
 
@@ -50,9 +49,9 @@ impl LegacyProtoNode for ProtoNode<'_> {
     fn write_to_legacy(
         &self,
         write: &mut impl Write,
-        version: &JavaMinecraftVersion,
+        version: JavaMinecraftVersion,
     ) -> Result<(), WritingError> {
-        let v1_21_6 = *version >= JavaMinecraftVersion::V_1_21_6;
+        let v1_21_6 = version >= JavaMinecraftVersion::V_1_21_6;
 
         // flags
         let mut redirect_target_on_flag = 0i32;
@@ -154,9 +153,9 @@ trait LegacyArgumentType {
     fn write_to_buffer_legacy(
         &self,
         write: &mut impl Write,
-        version: &JavaMinecraftVersion,
+        version: JavaMinecraftVersion,
     ) -> Result<(), WritingError>;
-    fn legacy_identifier_name(&self, version: &JavaMinecraftVersion) -> (&'static str, bool);
+    fn legacy_identifier_name(&self, version: JavaMinecraftVersion) -> (&'static str, bool);
 }
 
 impl LegacyArgumentType for ArgumentType {
@@ -164,9 +163,9 @@ impl LegacyArgumentType for ArgumentType {
     fn write_to_buffer_legacy(
         &self,
         write: &mut impl Write,
-        version: &JavaMinecraftVersion,
+        version: JavaMinecraftVersion,
     ) -> Result<(), WritingError> {
-        if *version >= JavaMinecraftVersion::V_1_19 {
+        if version >= JavaMinecraftVersion::V_1_19 {
             let id = self.to_id();
             write.write_var_int(&(id).into())?;
             if id == 5 {
@@ -187,7 +186,7 @@ impl LegacyArgumentType for ArgumentType {
                 Self::Entity { flags } => write_with_flags(*flags, write),
                 Self::ScoreHolder { flags } => write_with_flags(*flags, write),
                 Self::Time { min } => {
-                    if *version >= JavaMinecraftVersion::V_1_19_4 {
+                    if version >= JavaMinecraftVersion::V_1_19_4 {
                         write.write_i32_be(*min)
                     } else {
                         Ok(())
@@ -217,7 +216,7 @@ impl LegacyArgumentType for ArgumentType {
                 Self::Double { min, max } => write_number_arg(*min, *max, write),
                 Self::Integer { min, max } => write_number_arg(*min, *max, write),
                 Self::Long { min, max } => {
-                    if *version >= JavaMinecraftVersion::V_1_14 {
+                    if version >= JavaMinecraftVersion::V_1_14 {
                         write_number_arg(*min, *max, write)
                     } else {
                         let min_i32 = min.map(|v| v.clamp(i32::MIN as i64, i32::MAX as i64) as i32);
@@ -234,14 +233,14 @@ impl LegacyArgumentType for ArgumentType {
     }
 
     #[expect(clippy::match_same_arms)]
-    fn legacy_identifier_name(&self, version: &JavaMinecraftVersion) -> (&'static str, bool) {
+    fn legacy_identifier_name(&self, version: JavaMinecraftVersion) -> (&'static str, bool) {
         match self {
             Self::Bool => ("brigadier:bool", false),
             Self::Float { .. } => ("brigadier:float", false),
             Self::Double { .. } => ("brigadier:double", false),
             Self::Integer { .. } => ("brigadier:integer", false),
             Self::Long { .. } => {
-                if *version >= JavaMinecraftVersion::V_1_14 {
+                if version >= JavaMinecraftVersion::V_1_14 {
                     ("brigadier:long", false)
                 } else {
                     ("brigadier:integer", false)
@@ -262,14 +261,14 @@ impl LegacyArgumentType for ArgumentType {
             Self::Component => ("minecraft:component", false),
             Self::Message => ("minecraft:message", false),
             Self::NbtCompound => {
-                if *version >= JavaMinecraftVersion::V_1_14 {
+                if version >= JavaMinecraftVersion::V_1_14 {
                     ("minecraft:nbt_compound_tag", false)
                 } else {
                     ("minecraft:nbt", false)
                 }
             }
             Self::NbtTag => {
-                if *version >= JavaMinecraftVersion::V_1_14 {
+                if version >= JavaMinecraftVersion::V_1_14 {
                     ("minecraft:nbt_tag", false)
                 } else {
                     ("minecraft:nbt", false)
@@ -281,7 +280,7 @@ impl LegacyArgumentType for ArgumentType {
             Self::Operation => ("minecraft:operation", false),
             Self::Particle => ("minecraft:particle", false),
             Self::Angle => {
-                if *version >= JavaMinecraftVersion::V_1_16 {
+                if version >= JavaMinecraftVersion::V_1_16 {
                     ("minecraft:angle", false)
                 } else {
                     ("brigadier:string", true)
@@ -298,7 +297,7 @@ impl LegacyArgumentType for ArgumentType {
             Self::EntityAnchor => ("minecraft:entity_anchor", false),
             Self::IntRange => ("minecraft:int_range", false),
             Self::FloatRange => {
-                if *version >= JavaMinecraftVersion::V_1_14 {
+                if version >= JavaMinecraftVersion::V_1_14 {
                     ("minecraft:float_range", false)
                 } else {
                     ("brigadier:string", true)
@@ -307,27 +306,27 @@ impl LegacyArgumentType for ArgumentType {
             Self::Dimension => ("minecraft:dimension", false),
             Self::Gamemode => ("brigadier:string", true),
             Self::Time { .. } => {
-                if *version >= JavaMinecraftVersion::V_1_14 {
+                if version >= JavaMinecraftVersion::V_1_14 {
                     ("minecraft:time", false)
                 } else {
                     ("brigadier:string", true)
                 }
             }
             Self::TemplateMirror => {
-                if *version >= JavaMinecraftVersion::V_1_19 {
+                if version >= JavaMinecraftVersion::V_1_19 {
                     ("minecraft:template_mirror", false)
                 } else {
                     ("brigadier:string", true)
                 }
             }
             Self::TemplateRotation => {
-                if *version >= JavaMinecraftVersion::V_1_19 {
+                if version >= JavaMinecraftVersion::V_1_19 {
                     ("minecraft:template_rotation", false)
                 } else {
                     ("brigadier:string", true)
                 }
             }
-            Self::Uuid if *version >= JavaMinecraftVersion::V_1_16 => ("minecraft:uuid", false),
+            Self::Uuid if version >= JavaMinecraftVersion::V_1_16 => ("minecraft:uuid", false),
             _ => ("brigadier:string", true),
         }
     }

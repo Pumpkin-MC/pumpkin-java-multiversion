@@ -1,5 +1,6 @@
-pub mod legacy;
 pub mod packet;
+#[cfg(test)]
+mod reference;
 pub mod remap;
 pub mod tag;
 pub mod translate;
@@ -20,10 +21,10 @@ use pumpkin_plugin_api::{
     register_plugin,
 };
 
-use crate::packet::mappings;
 use crate::packet::translator::{PacketTranslator, from_wasm_java_version, to_wasm_java_version};
 use crate::translate::tags;
 use pumpkin_data::packet::CURRENT_MC_VERSION;
+use pumpkin_protocol::java::legacy::ids;
 use pumpkin_util::version::JavaMinecraftVersion;
 
 /// What the client's protocol has beyond the packet format.
@@ -148,7 +149,7 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
             if version == CURRENT_MC_VERSION {
                 return event;
             }
-            let is_join = event.packet_id == mappings::clientbound::play::LOGIN.current();
+            let is_join = event.packet_id == ids::clientbound::play::LOGIN.current();
             // A current id means a different packet to the client, so drop what has none
             match PacketTranslator::translate_outgoing_packet(
                 event.packet_id,
@@ -165,7 +166,7 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
                 && !event.cancelled
                 && let Some(payload) = tags::join_tags(version)
                 && let Some(packet_id) = PacketTranslator::translate_clientbound_packet_id(
-                    mappings::clientbound::play::UPDATE_TAGS.current(),
+                    ids::clientbound::play::UPDATE_TAGS.current(),
                     version,
                 )
             {

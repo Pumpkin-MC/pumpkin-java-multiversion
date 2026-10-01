@@ -180,8 +180,8 @@ pub fn commands_from_current(mut payload: &[u8], version: JavaMinecraftVersion) 
 
 #[cfg(test)]
 mod tests {
-    use crate::legacy::LegacyWrite;
-    use pumpkin_data::packet::CURRENT_MC_VERSION;
+    use crate::reference::ReferenceWrite;
+
     use pumpkin_protocol::{
         ClientPacket,
         java::client::play::{CCommands, ProtoNode, ProtoNodeType},
@@ -225,7 +225,7 @@ mod tests {
         };
         let mut current = Vec::new();
         CCommands::new(nodes(), VarInt(0))
-            .write_packet_data(&mut current, &CURRENT_MC_VERSION)
+            .write_packet_data(&mut current)
             .unwrap();
         let version = JavaMinecraftVersion::V_1_21_5;
         let mut expected = Vec::new();

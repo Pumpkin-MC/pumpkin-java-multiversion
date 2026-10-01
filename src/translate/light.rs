@@ -36,7 +36,7 @@ pub fn write_light_data(
     // sky, block, empty sky, empty block
     for _ in 0..4 {
         let mask = BitSet::decode(&mut light).ok()?;
-        crate::legacy::write_bit_set_legacy(&mut *out, &mask, &version).ok()?;
+        pumpkin_protocol::java::legacy::write_bit_set_legacy(&mut *out, &mask, &version).ok()?;
     }
     out.extend_from_slice(light);
     Some(())
@@ -78,7 +78,7 @@ mod tests {
 
         let mut expected = Vec::new();
         for _ in 0..4 {
-            crate::legacy::write_bit_set_legacy(
+            pumpkin_protocol::java::legacy::write_bit_set_legacy(
                 &mut expected,
                 &mask,
                 &JavaMinecraftVersion::V_1_21_11,

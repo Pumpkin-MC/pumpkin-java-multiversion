@@ -1,11 +1,10 @@
-#![cfg(test)]
 //! Pre-26.3 encodings from `pumpkin-protocol`'s `java/server/login/encryption_response.rs`.
 
-use crate::legacy::LegacyWrite;
+use super::ReferenceWrite;
 use pumpkin_protocol::java::server::login::SEncryptionResponse;
 use pumpkin_util::version::JavaMinecraftVersion;
 
-impl LegacyWrite for SEncryptionResponse {
+impl ReferenceWrite for SEncryptionResponse {
     fn write_legacy(
         &self,
         mut write: impl std::io::Write,

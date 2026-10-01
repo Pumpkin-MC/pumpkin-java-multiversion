@@ -1,7 +1,7 @@
 //! Entity movement: MOVE_ENTITY_POS, MOVE_ENTITY_POS_ROT, MOVE_ENTITY_ROT, ENTITY_POSITION_SYNC,
 //! SET_ENTITY_MOTION, PLAYER_ROTATION, PLAYER_POSITION.
 
-use crate::legacy::LegacyWrite;
+use pumpkin_protocol::java::legacy::{LegacyPacket, LegacyWrite};
 use pumpkin_protocol::{
     codec::lp_vector_3d::LpVector3d,
     java::client::play::{
@@ -11,8 +11,6 @@ use pumpkin_protocol::{
     ser::NetworkReadExt,
 };
 use pumpkin_util::{math::vector3::Vector3, version::JavaMinecraftVersion};
-
-use crate::packet::mappings::clientbound::play::{ENTITY_POSITION_SYNC, TELEPORT_ENTITY};
 
 fn write(packet: &impl LegacyWrite, version: JavaMinecraftVersion) -> Option<Vec<u8>> {
     let mut out = Vec::new();
@@ -60,16 +58,10 @@ pub fn position_sync_from_current(
         pitch,
         on_ground,
     );
-    Some((position_sync_id(version), write(&packet, version)?))
-}
-
-/// The client's id of ENTITY_POSITION_SYNC, TELEPORT_ENTITY before 1.21.2. Core's ids are 26.3's.
-fn position_sync_id(version: JavaMinecraftVersion) -> i32 {
-    if version >= JavaMinecraftVersion::V_1_21_2 {
-        ENTITY_POSITION_SYNC.to_id(version)
-    } else {
-        TELEPORT_ENTITY.to_id(version)
-    }
+    Some((
+        CEntityPositionSync::legacy_id(version)?,
+        write(&packet, version)?,
+    ))
 }
 
 /// SET_ENTITY_MOTION: packed velocity since 1.21.9, three shorts before. Core's writer handles
@@ -112,10 +104,10 @@ pub fn player_position_from_current(
 
 #[cfg(test)]
 mod tests {
-    use crate::legacy::LegacyWrite;
     use pumpkin_data::packet::CURRENT_MC_VERSION;
     use pumpkin_protocol::ClientPacket;
     use pumpkin_protocol::VarInt;
+    use pumpkin_protocol::java::legacy::LegacyWrite;
     use pumpkin_protocol::ser::NetworkWriteExt;
 
     use super::*;
@@ -201,7 +193,10 @@ mod tests {
         );
         let current = write(&packet, CURRENT_MC_VERSION).unwrap();
         for version in VERSIONS {
-            let expected = (position_sync_id(version), write(&packet, version).unwrap());
+            let expected = (
+                CEntityPositionSync::legacy_id(version).unwrap(),
+                write(&packet, version).unwrap(),
+            );
             assert_eq!(
                 position_sync_from_current(&current, version),
                 Some(expected)
@@ -214,9 +209,7 @@ mod tests {
         for velocity in [Vector3::new(0.5, -0.25, 0.0), Vector3::new(0.0, 0.0, 0.0)] {
             let packet = CEntityVelocity::new(VarInt(7), velocity);
             let mut current = Vec::new();
-            packet
-                .write_packet_data(&mut current, &CURRENT_MC_VERSION)
-                .unwrap();
+            packet.write_packet_data(&mut current).unwrap();
             let version = JavaMinecraftVersion::V_1_21_7;
             let mut expected = Vec::new();
             packet.write_legacy(&mut expected, &version).unwrap();

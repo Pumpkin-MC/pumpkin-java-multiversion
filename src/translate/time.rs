@@ -1,6 +1,6 @@
 //! SET_TIME.
 
-use crate::legacy::LegacyWrite;
+use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     codec::var_long::VarLong, java::client::play::CUpdateTime, ser::NetworkReadExt,
 };
@@ -34,9 +34,9 @@ pub fn set_time_from_current(mut payload: &[u8], version: JavaMinecraftVersion) 
 
 #[cfg(test)]
 mod tests {
-    use crate::legacy::LegacyWrite;
-    use pumpkin_data::packet::CURRENT_MC_VERSION;
+
     use pumpkin_protocol::ClientPacket;
+    use pumpkin_protocol::java::legacy::LegacyWrite;
 
     use super::*;
 
@@ -47,9 +47,7 @@ mod tests {
             CUpdateTime::new_clock(1200, 0, 6000, 0.0, 0.0),
         ] {
             let mut current = Vec::new();
-            packet
-                .write_packet_data(&mut current, &CURRENT_MC_VERSION)
-                .unwrap();
+            packet.write_packet_data(&mut current).unwrap();
             for version in [
                 JavaMinecraftVersion::V_1_21_11,
                 JavaMinecraftVersion::V_1_20,

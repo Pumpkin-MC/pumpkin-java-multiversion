@@ -36,7 +36,8 @@ fn line_to_legacy_json(tag: &NbtTag, version: JavaMinecraftVersion) -> NbtTag {
     NbtTag::String(match tag {
         NbtTag::String(raw) => plain_to_json_string(raw),
         other => {
-            crate::legacy::text::to_json(&TextComponent::from_nbt(other), &version).into_boxed_str()
+            pumpkin_protocol::java::legacy::text::to_json(&TextComponent::from_nbt(other), &version)
+                .into_boxed_str()
         }
     })
 }

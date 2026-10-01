@@ -14,11 +14,11 @@ use super::{
     ceil_log2,
     nbt::{split_network_nbt, write_network_nbt},
 };
-use crate::legacy::block_pos_to_version;
 use crate::remap::{
     block_entity_type_id_remap::remap_block_entity_type_id_for_version,
     block_state_remap::remap_block_state_for_version,
 };
+use pumpkin_protocol::java::legacy::block_pos_to_version;
 
 #[must_use]
 pub fn remap_state(id: u32, version: JavaMinecraftVersion) -> u32 {

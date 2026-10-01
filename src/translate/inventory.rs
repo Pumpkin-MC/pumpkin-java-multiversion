@@ -1,8 +1,8 @@
 //! Inventory items: container content and slots, cursor, player inventory, equipment, and the
 //! creative slots and clicks sent back.
 
-use crate::legacy::{LegacyReadExt, LegacyWriteExt};
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_protocol::java::legacy::{LegacyReadExt, LegacyWriteExt};
 use pumpkin_protocol::{
     VarInt,
     codec::item_stack_seralizer::ItemStackSerializer,
@@ -10,7 +10,6 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
-use crate::legacy::slot_to_version;
 use crate::remap::{
     data_component_type_id_remap::remap_data_component_type_id_from_version,
     item_id_remap::remap_item_id_from_version,
@@ -19,6 +18,7 @@ use crate::translate::{
     item::{ItemFormat, write_item_for_version},
     nbt::skip_client_nbt,
 };
+use pumpkin_protocol::java::legacy::slot_to_version;
 
 eras! {
     pub enum ContainerFormat {
@@ -456,7 +456,7 @@ fn legacy_click_to_current(mut payload: &[u8], version: JavaMinecraftVersion) ->
 #[cfg(test)]
 mod tests {
     use pumpkin_data::item::Item;
-    use pumpkin_data::packet::CURRENT_MC_VERSION;
+
     use pumpkin_protocol::{ClientPacket, java::client::play::CSetContainerSlot};
 
     use crate::remap::item_id_remap::remap_item_id_for_version;
@@ -470,7 +470,7 @@ mod tests {
         let stack = ItemStackSerializer::from(ItemStack::new(3, &Item::DIRT));
         let mut current = Vec::new();
         CSetContainerSlot::new(0, 5, 36, &stack)
-            .write_packet_data(&mut current, &CURRENT_MC_VERSION)
+            .write_packet_data(&mut current)
             .unwrap();
 
         let dirt = remap_item_id_for_version(Item::DIRT.id, V1_21_11);

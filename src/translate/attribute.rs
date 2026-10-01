@@ -1,7 +1,7 @@
 //! Entity attributes: UPDATE_ATTRIBUTES.
 
-use crate::legacy::LegacyWrite;
-use pumpkin_data::{attributes::Attributes, packet::CURRENT_MC_VERSION};
+use pumpkin_data::attributes::Attributes;
+use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{ServerPacket, VarInt, java::client::play::CUpdateAttributes};
 use pumpkin_util::version::JavaMinecraftVersion;
 
@@ -31,7 +31,7 @@ pub fn update_attributes_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let mut packet = CUpdateAttributes::read(&mut payload, &CURRENT_MC_VERSION).ok()?;
+    let mut packet = CUpdateAttributes::read(&mut payload).ok()?;
     packet.properties.retain_mut(|property| {
         client_attribute(property.id, version).is_some_and(|id| {
             property.id = id;
@@ -45,9 +45,9 @@ pub fn update_attributes_from_current(
 
 #[cfg(test)]
 mod tests {
-    use crate::legacy::LegacyWrite;
     use pumpkin_protocol::ClientPacket;
     use pumpkin_protocol::java::client::play::Property;
+    use pumpkin_protocol::java::legacy::LegacyWrite;
 
     use super::*;
 
@@ -70,9 +70,7 @@ mod tests {
             ],
         );
         let mut current = Vec::new();
-        packet
-            .write_packet_data(&mut current, &CURRENT_MC_VERSION)
-            .unwrap();
+        packet.write_packet_data(&mut current).unwrap();
 
         let version = JavaMinecraftVersion::V_1_21_11;
         // 1.21.11 has no friction modifier

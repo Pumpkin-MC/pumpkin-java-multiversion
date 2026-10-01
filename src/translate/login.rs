@@ -1,7 +1,6 @@
 //! Login state: HELLO, KEY and LOGIN_FINISHED.
 
-use crate::legacy::{LegacyRead, LegacyWrite};
-use pumpkin_data::packet::CURRENT_MC_VERSION;
+use pumpkin_protocol::java::legacy::{LegacyRead, LegacyWrite};
 use pumpkin_protocol::{
     ClientPacket, Property,
     java::{client::login::CLoginSuccess, server::login::SEncryptionResponse},
@@ -39,9 +38,7 @@ pub fn key_to_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Opti
     }
     let packet = SEncryptionResponse::read_legacy(&mut payload, &version).ok()?;
     let mut out = Vec::new();
-    packet
-        .write_packet_data(&mut out, &CURRENT_MC_VERSION)
-        .ok()?;
+    packet.write_packet_data(&mut out).ok()?;
     Some(out)
 }
 
@@ -78,7 +75,7 @@ pub fn login_success_from_current(
 
 #[cfg(test)]
 mod tests {
-    use crate::legacy::LegacyWrite;
+    use crate::reference::ReferenceWrite;
     use pumpkin_plugin_api::events_wit::ConnectionState;
     use pumpkin_protocol::ServerPacket;
     use pumpkin_protocol::{
@@ -88,7 +85,8 @@ mod tests {
     };
 
     use super::*;
-    use crate::packet::{mappings, translator::PacketTranslator};
+    use crate::packet::translator::PacketTranslator;
+    use pumpkin_protocol::java::legacy::ids;
 
     fn key_payload(version: JavaMinecraftVersion, secret: &[u8], token: &[u8]) -> Vec<u8> {
         let packet = SEncryptionResponse {
@@ -103,7 +101,7 @@ mod tests {
     fn translate_key(version: JavaMinecraftVersion, payload: &[u8]) -> Option<(i32, Vec<u8>)> {
         PacketTranslator::translate_connection_incoming(
             ConnectionState::Login,
-            mappings::serverbound::login::KEY.to_id(version),
+            ids::serverbound::login::KEY.to_id(version),
             payload,
             version,
         )
@@ -111,7 +109,7 @@ mod tests {
 
     fn read_current(payload: &[u8]) -> SEncryptionResponse {
         let mut slice = payload;
-        SEncryptionResponse::read(&mut slice, &CURRENT_MC_VERSION).unwrap()
+        SEncryptionResponse::read(&mut slice).unwrap()
     }
 
     #[test]
@@ -120,7 +118,7 @@ mod tests {
         let token = b"tokn";
         let payload = key_payload(JavaMinecraftVersion::V_1_7_6, secret, token);
         let (id, out) = translate_key(JavaMinecraftVersion::V_1_7_6, &payload).unwrap();
-        assert_eq!(id, mappings::serverbound::login::KEY.current());
+        assert_eq!(id, ids::serverbound::login::KEY.current());
         let read = read_current(&out);
         assert_eq!(&*read.shared_secret, secret);
         assert_eq!(&*read.verify_token, token);
@@ -141,7 +139,7 @@ mod tests {
         payload.extend_from_slice(signature);
 
         let (id, out) = translate_key(JavaMinecraftVersion::V_1_19_3, &payload).unwrap();
-        assert_eq!(id, mappings::serverbound::login::KEY.current());
+        assert_eq!(id, ids::serverbound::login::KEY.current());
         let read = read_current(&out);
         assert_eq!(&*read.shared_secret, secret);
         assert!(read.verify_token.is_empty());
@@ -164,7 +162,7 @@ mod tests {
         let token = b"tokn";
         let payload = key_payload(JavaMinecraftVersion::V_1_8, secret, token);
         let (id, out) = translate_key(JavaMinecraftVersion::V_1_8, &payload).unwrap();
-        assert_eq!(id, mappings::serverbound::login::KEY.current());
+        assert_eq!(id, ids::serverbound::login::KEY.current());
         assert_eq!(out, payload);
     }
 
@@ -172,19 +170,17 @@ mod tests {
     fn hello_outgoing_1_7_uses_i16_lengths() {
         let packet = CEncryptionRequest::new("", b"public_key_bytes", b"tokn", true);
         let mut payload = Vec::new();
-        packet
-            .write_packet_data(&mut payload, &CURRENT_MC_VERSION)
-            .unwrap();
+        packet.write_packet_data(&mut payload).unwrap();
         let (id, out) = PacketTranslator::translate_connection_outgoing(
             ConnectionState::Login,
-            mappings::clientbound::login::HELLO.current(),
+            ids::clientbound::login::HELLO.current(),
             &payload,
             JavaMinecraftVersion::V_1_7_6,
         )
         .unwrap();
         assert_eq!(
             id,
-            mappings::clientbound::login::HELLO.to_id(JavaMinecraftVersion::V_1_7_6)
+            ids::clientbound::login::HELLO.to_id(JavaMinecraftVersion::V_1_7_6)
         );
         // Server id, then the key and token with short lengths
         let mut slice = out.as_slice();
@@ -201,9 +197,7 @@ mod tests {
         let session = uuid::Uuid::from_u128(2);
         let packet = CLoginSuccess::new(&uuid, "Steve", &[], true, session);
         let mut payload = Vec::new();
-        packet
-            .write_packet_data(&mut payload, &CURRENT_MC_VERSION)
-            .unwrap();
+        packet.write_packet_data(&mut payload).unwrap();
         (uuid, payload)
     }
 

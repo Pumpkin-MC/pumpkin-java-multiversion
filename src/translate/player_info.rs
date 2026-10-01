@@ -1,6 +1,6 @@
 //! PLAYER_INFO_UPDATE.
 
-use crate::legacy::LegacyWrite;
+use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     Property,
     java::client::play::{CPlayerInfoUpdate, InitChat, Player, PlayerAction, PlayerInfoFlags},
@@ -183,8 +183,8 @@ pub fn player_info_update_from_current(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::legacy::LegacyWrite;
     use pumpkin_data::packet::CURRENT_MC_VERSION;
+    use pumpkin_protocol::java::legacy::LegacyWrite;
 
     fn packet(version: JavaMinecraftVersion) -> Vec<u8> {
         let properties = [Property {

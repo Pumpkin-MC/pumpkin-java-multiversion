@@ -1,6 +1,6 @@
 //! Explosions: EXPLODE.
 
-use crate::legacy::LegacyWrite;
+use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     IdOr, SoundEvent, VarInt,
     java::client::play::CExplosion,
@@ -106,9 +106,9 @@ pub fn explode_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -
 
 #[cfg(test)]
 mod tests {
-    use crate::legacy::LegacyWrite;
-    use pumpkin_data::{packet::CURRENT_MC_VERSION, particle::Particle};
+    use pumpkin_data::particle::Particle;
     use pumpkin_protocol::ClientPacket;
+    use pumpkin_protocol::java::legacy::LegacyWrite;
 
     use crate::remap::{
         particle_id_remap::remap_particle_id_for_version,
@@ -132,7 +132,7 @@ mod tests {
         };
         let mut current = Vec::new();
         packet(particle, 300)
-            .write_packet_data(&mut current, &CURRENT_MC_VERSION)
+            .write_packet_data(&mut current)
             .unwrap();
         let mut expected = Vec::new();
         packet(

@@ -1,7 +1,7 @@
 //! Particles: id and options, LEVEL_PARTICLES.
 
-use crate::legacy::LegacyWrite;
 use pumpkin_data::particle::Particle;
+use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     VarInt,
     codec::particle::ParticleOptionsLayout,
@@ -178,8 +178,8 @@ pub fn level_particles_from_current(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::legacy::LegacyWrite;
     use pumpkin_protocol::ClientPacket;
+    use pumpkin_protocol::java::legacy::LegacyWrite;
 
     #[test]
     fn dust_color_becomes_floats_before_1_21_2() {
@@ -209,8 +209,6 @@ mod tests {
 
     #[test]
     fn level_particles_use_the_26_2_layout() {
-        use pumpkin_data::packet::CURRENT_MC_VERSION;
-
         let flame = VarInt(i32::from(Particle::Flame.to_id()));
         let packet = |id| {
             CParticle::new(
@@ -225,9 +223,7 @@ mod tests {
             )
         };
         let mut current = Vec::new();
-        packet(flame)
-            .write_packet_data(&mut current, &CURRENT_MC_VERSION)
-            .unwrap();
+        packet(flame).write_packet_data(&mut current).unwrap();
 
         let version = JavaMinecraftVersion::V_26_2;
         let id = remap_particle_id_for_version(Particle::Flame.to_id(), version);

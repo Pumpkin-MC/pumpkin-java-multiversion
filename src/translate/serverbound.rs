@@ -1,7 +1,6 @@
 //! Serverbound play packets from older clients to 26.3.
 
-use crate::legacy::{LegacyRead, block_pos_to_current};
-use pumpkin_data::packet::CURRENT_MC_VERSION;
+use pumpkin_protocol::java::legacy::{LegacyRead, block_pos_to_current};
 use pumpkin_protocol::{
     ClientPacket, VarInt,
     java::server::play::{ActionType, SInteract},
@@ -9,7 +8,7 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
-use crate::packet::mappings::serverbound::play;
+use pumpkin_protocol::java::legacy::ids::serverbound::play;
 
 eras! {
     enum UseItemFormat {
@@ -125,7 +124,7 @@ pub fn interact_to_current(
                 r#type: VarInt(ActionType::InteractAt as i32),
                 ..interact
             }
-            .write_packet_data(&mut out, &CURRENT_MC_VERSION)
+            .write_packet_data(&mut out)
             .ok()?;
             Some((play::INTERACT.current(), out))
         }
@@ -365,7 +364,7 @@ mod tests {
         client.extend_from_slice(&[1, 1]);
         let (id, payload) = interact_to_current(&client, V1_21_11).unwrap();
         assert_eq!(id, play::INTERACT.current());
-        let read = SInteract::read(&mut payload.as_slice(), &CURRENT_MC_VERSION).unwrap();
+        let read = SInteract::read(&mut payload.as_slice()).unwrap();
         assert_eq!(read.entity_id, VarInt(5));
         assert_eq!(read.hand, Some(VarInt(1)));
         assert!(read.sneaking);

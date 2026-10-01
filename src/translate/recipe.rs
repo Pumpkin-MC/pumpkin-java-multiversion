@@ -311,7 +311,7 @@ pub fn update_recipes_from_current(
 
 #[cfg(test)]
 mod tests {
-    use pumpkin_data::packet::CURRENT_MC_VERSION;
+
     use pumpkin_protocol::{ClientPacket, java::client::play::CRecipeBookAdd};
 
     use super::*;
@@ -355,7 +355,7 @@ mod tests {
     fn recipe_book_add_walks_as_1_21_11() {
         let mut payload = Vec::new();
         CRecipeBookAdd::new(false, &[])
-            .write_packet_data(&mut payload, &CURRENT_MC_VERSION)
+            .write_packet_data(&mut payload)
             .unwrap();
         let out = recipe_book_add_from_current(&payload, JavaMinecraftVersion::V_1_21_11).unwrap();
 
