@@ -4,10 +4,41 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
 use serde_json::Value;
+
+/// Core's assets, the source of the current version's data; the plugin is checked out next
+/// to Pumpkin, as the path dependencies in `Cargo.toml` expect.
+const CORE_ASSETS: &str = "../Pumpkin/assets";
+
+/// The current version's folder name, which lives in [`CORE_ASSETS`] instead of `assets/`.
+const CURRENT: &str = "26_3";
+
+fn datapack_dir(folder: &str) -> PathBuf {
+    if folder == CURRENT {
+        Path::new(CORE_ASSETS).join("datapack")
+    } else {
+        Path::new("assets/datapacks").join(folder)
+    }
+}
+
+fn tracked_data_path(folder: &str) -> String {
+    if folder == CURRENT {
+        format!("{CORE_ASSETS}/tracked_data.json")
+    } else {
+        format!("assets/tracked_data/{folder}_tracked_data.json")
+    }
+}
+
+fn meta_data_type_path(folder: &str) -> String {
+    if folder == CURRENT {
+        format!("{CORE_ASSETS}/meta_data_type.json")
+    } else {
+        format!("assets/meta_data_type/{folder}_meta_data_type.json")
+    }
+}
 
 /// Datapack folders sent as one registry per packet (1.20.5+).
 const VERSIONS: &[&str] = &[
@@ -26,7 +57,7 @@ const DIMENSION_TYPE_VERSIONS: &[&str] = &["1_16_2", "1_17", "1_18"];
 /// Datapack folders whose entry order is needed to remap registry ids.
 const NAME_VERSIONS: &[&str] = &[
     "1_16", "1_16_2", "1_17", "1_18", "1_19", "1_20", "1_20_2", "1_21", "1_21_2", "1_21_4",
-    "1_21_5", "1_21_6", "1_21_7", "1_21_9", "1_21_11", "26_1", "26_2", "26_3",
+    "1_21_5", "1_21_6", "1_21_7", "1_21_9", "1_21_11", "26_1", "26_2", CURRENT,
 ];
 
 /// Same list as core's codegen. A version syncs the ones its datapack has.
@@ -123,7 +154,7 @@ fn serializer_name(name: &str) -> String {
 
 /// Entity name to its fields, sorted by id.
 fn load_tracked(folder: &str) -> HashMap<String, Vec<Field>> {
-    let path = format!("assets/tracked_data/{folder}_tracked_data.json");
+    let path = tracked_data_path(folder);
     let json: HashMap<String, HashMap<String, Value>> =
         serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     json.into_iter()
@@ -143,7 +174,7 @@ fn load_tracked(folder: &str) -> HashMap<String, Vec<Field>> {
 }
 
 fn load_serializers(folder: &str) -> HashMap<String, i64> {
-    let path = format!("assets/meta_data_type/{folder}_meta_data_type.json");
+    let path = meta_data_type_path(folder);
     let json: HashMap<String, i64> =
         serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     json.into_iter()
@@ -191,8 +222,8 @@ fn step_fields(
 
 /// Per client version: serializer ids and field ids by 26.3's, 255 / -1 where the client lacks them.
 fn entity_data_tables() -> String {
-    let current = load_tracked("26_3");
-    let current_serializers = load_serializers("26_3");
+    let current = load_tracked(CURRENT);
+    let current_serializers = load_serializers(CURRENT);
     let mut current_serializer_names: Vec<_> = current_serializers.iter().collect();
     current_serializer_names.sort_by_key(|(_, id)| **id);
 
@@ -282,9 +313,7 @@ fn json_to_nbt_tag(v: &Value) -> NbtTag {
 
 /// `(registry, [(entry, element)])` in core's order: sorted file names, `raw` chat type last.
 fn load_version(folder: &str) -> Vec<(&'static str, Vec<(String, NbtCompound)>)> {
-    let base = Path::new("assets/datapacks")
-        .join(folder)
-        .join("data/minecraft");
+    let base = datapack_dir(folder).join("data/minecraft");
     let mut registries = Vec::new();
     for &reg_name in SYNCED_REGISTRIES {
         let Ok(dir) = fs::read_dir(base.join(reg_name)) else {
@@ -634,9 +663,7 @@ fn load_tags(folder: &str) -> HashMap<(String, String), Vec<String>> {
     }
     let mut out = HashMap::new();
     walk(
-        &Path::new("assets/datapacks")
-            .join(folder)
-            .join("data/minecraft/tags"),
+        &datapack_dir(folder).join("data/minecraft/tags"),
         "",
         &mut out,
     );
@@ -677,7 +704,7 @@ fn resolve_tag(
 
 /// Per version, the tags 26.3 no longer has, with resolved entry names.
 fn missing_tag_tables() -> String {
-    let current = load_tags("26_3");
+    let current = load_tags(CURRENT);
     let mut out = String::new();
     for folder in TAG_VERSIONS {
         let tags = load_tags(folder);
@@ -706,6 +733,13 @@ fn main() {
     println!("cargo:rerun-if-changed=assets/datapacks");
     println!("cargo:rerun-if-changed=assets/tracked_data");
     println!("cargo:rerun-if-changed=assets/meta_data_type");
+    assert!(
+        Path::new(CORE_ASSETS).is_dir(),
+        "{CORE_ASSETS} not found: check out Pumpkin next to this plugin"
+    );
+    for path in ["datapack", "tracked_data.json", "meta_data_type.json"] {
+        println!("cargo:rerun-if-changed={CORE_ASSETS}/{path}");
+    }
 
     let mut blobs: Vec<Vec<u8>> = Vec::new();
     let mut blob_ids: HashMap<Vec<u8>, usize> = HashMap::new();
