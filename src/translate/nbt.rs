@@ -4,8 +4,10 @@ use pumpkin_util::version::JavaMinecraftVersion;
 
 eras! {
     pub enum NbtRoot {
+        /// Gzipped with an i16 length prefix (client items).
+        Gzipped = V_1_7_2,
         /// The root compound has an (empty) name.
-        Named = V_1_7_2,
+        Named = V_1_8,
         /// Nameless root.
         Nameless = V_1_20_2,
     }
@@ -62,14 +64,15 @@ fn payload_len(data: &[u8], tag_type: u8) -> Option<usize> {
 
 /// Skips one NBT of a client's item: a named root before 1.20.2, gzip with an i16 length in 1.7.
 pub fn skip_client_nbt(data: &mut &[u8], version: JavaMinecraftVersion) -> Option<()> {
-    if version < JavaMinecraftVersion::V_1_8 {
+    let root = NbtRoot::of(version);
+    if root == NbtRoot::Gzipped {
         let len = i16::from_be_bytes(data.get(..2)?.try_into().ok()?);
         *data = data.get(2 + usize::try_from(len).unwrap_or(0)..)?;
         return Some(());
     }
     let tag_type = *data.first()?;
     let mut at = 1;
-    if tag_type != 0 && NbtRoot::of(version) == NbtRoot::Named {
+    if tag_type != 0 && root == NbtRoot::Named {
         at += 2 + be_len(data, 1, 2)?;
     }
     at += payload_len(data.get(at..)?, tag_type)?;
@@ -92,7 +95,7 @@ pub fn write_network_nbt(nbt: &[u8], version: JavaMinecraftVersion, out: &mut Ve
         return;
     };
     out.push(tag_type);
-    if tag_type != 0 && NbtRoot::of(version) == NbtRoot::Named {
+    if tag_type != 0 && NbtRoot::of(version) != NbtRoot::Nameless {
         out.extend_from_slice(&[0, 0]);
     }
     out.extend_from_slice(payload);

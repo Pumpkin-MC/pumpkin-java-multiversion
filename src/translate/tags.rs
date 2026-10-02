@@ -192,6 +192,22 @@ pub fn update_tags_from_current(
     Some(out)
 }
 
+eras! {
+    /// How the client receives tags.
+    pub enum TagsFormat {
+        /// No tags packet.
+        None = V_1_7_2,
+        /// Fixed categories without names: blocks, items, fluids.
+        Categories = V_1_13,
+        /// Entity types added to the fixed categories.
+        EntityCategories = V_1_14,
+        /// Named registries.
+        Named = V_1_17,
+        /// Sent in the configuration state.
+        Configuration = V_1_20_2,
+    }
+}
+
 /// Registries of the fixed layout before 1.17, in order. Entity types since 1.14.
 const LEGACY_CATEGORIES: [&str; 4] = [
     "minecraft:block",
@@ -206,8 +222,9 @@ pub fn play_update_tags_from_current(
     payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
+    let format = TagsFormat::of(version);
     let translated = update_tags_from_current(payload, version)?;
-    if version >= JavaMinecraftVersion::V_1_17 {
+    if format >= TagsFormat::Named {
         return Some(translated);
     }
 
@@ -224,7 +241,7 @@ pub fn play_update_tags_from_current(
         registries.insert(name, &start[..start.len() - reader.len()]);
     }
 
-    let categories = if version >= JavaMinecraftVersion::V_1_14 {
+    let categories = if format == TagsFormat::EntityCategories {
         &LEGACY_CATEGORIES[..]
     } else {
         &LEGACY_CATEGORIES[..3]
@@ -242,7 +259,10 @@ pub fn play_update_tags_from_current(
 /// Before 1.20.2 there is no configuration state, so vanilla sends the tags in play right
 /// after the join packet. `None` for clients that get them in configuration or have none.
 pub fn join_tags(version: JavaMinecraftVersion) -> Option<Vec<u8>> {
-    if !(JavaMinecraftVersion::V_1_13..JavaMinecraftVersion::V_1_20_2).contains(&version) {
+    if matches!(
+        TagsFormat::of(version),
+        TagsFormat::None | TagsFormat::Configuration
+    ) {
         return None;
     }
     let mut current = Vec::new();

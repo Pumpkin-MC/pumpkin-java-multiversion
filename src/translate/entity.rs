@@ -27,6 +27,17 @@ eras! {
     }
 }
 
+eras! {
+    pub enum MobTypeIds {
+        /// Legacy mob ids, variants share their base mob's id.
+        V1_7 = V_1_7_2,
+        /// Variants split into their own ids, the rest stay legacy.
+        V1_11 = V_1_11,
+        /// Entity type ids.
+        V1_14 = V_1_14,
+    }
+}
+
 /// ADD_ENTITY, as `(client packet id, payload)`: the client's spawn packet, entity type and
 /// falling block state.
 pub fn add_entity_from_current(
@@ -115,12 +126,12 @@ pub fn add_entity_from_current(
 #[must_use]
 #[expect(clippy::too_many_lines)]
 pub fn remap_living_mob_type_for_version(entity_id: u16, version: JavaMinecraftVersion) -> u16 {
-    if version >= JavaMinecraftVersion::V_1_14 {
+    let ids = MobTypeIds::of(version);
+    if ids == MobTypeIds::V1_14 {
         return remap_entity_id_for_version(entity_id, version);
     }
 
-    if version >= JavaMinecraftVersion::V_1_11 {
-        // 1.11 - 1.13 separate entity IDs
+    if ids == MobTypeIds::V1_11 {
         if entity_id == EntityType::ELDER_GUARDIAN.id {
             return 4;
         } else if entity_id == EntityType::WITHER_SKELETON.id {
