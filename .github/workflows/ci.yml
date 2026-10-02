@@ -5,6 +5,8 @@ on:
     branches:
       - master
       - main
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - master
@@ -85,6 +87,23 @@ jobs:
 
       - name: Build WASM plugin (release)
         run: cargo build --release --target wasm32-wasip2
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-artifacts
+          path: |
+            target/wasm32-wasip2/debug/*.wasm
+            target/wasm32-wasip2/release/*.wasm
+
+      - name: Create draft release on tag push
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            target/wasm32-wasip2/debug/*.wasm
+            target/wasm32-wasip2/release/*.wasm
 
   test:
     name: Test
