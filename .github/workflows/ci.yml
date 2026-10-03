@@ -69,6 +69,8 @@ jobs:
   build:
     name: Compile & Build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -98,7 +100,17 @@ jobs:
           RUST_MIN_STACK: 33554432
         run: cargo build --release --target wasm32-wasip2
 
-      - name: Upload release assets
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          for file in target/wasm32-wasip2/debug/*.wasm; do
+            cp "$file" "release-assets/debug-$(basename "$file")"
+          done
+          for file in target/wasm32-wasip2/release/*.wasm; do
+            cp "$file" "release-assets/release-$(basename "$file")"
+          done
+
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wasm-artifacts
