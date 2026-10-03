@@ -57,9 +57,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run Clippy (WASM target)
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo clippy --target wasm32-wasip2 -- -D warnings
 
       - name: Run Clippy (Host target)
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo clippy --all-targets -- -D warnings
 
   build:
@@ -80,12 +84,18 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check native compilation
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo check --all-targets
 
       - name: Build WASM plugin (debug)
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo build --target wasm32-wasip2
 
       - name: Build WASM plugin (release)
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo build --release --target wasm32-wasip2
 
       - name: Upload release assets
@@ -121,4 +131,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run unit tests
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo test --lib --verbose
