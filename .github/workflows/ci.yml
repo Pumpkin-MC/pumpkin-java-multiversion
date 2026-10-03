@@ -111,9 +111,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Clone Pumpkin dependency
-        run: git clone --depth 1 https://github.com/Pumpkin-MC/Pumpkin.git ../Pumpkin
+        with:
+          submodules: recursive
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
