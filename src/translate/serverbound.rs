@@ -65,8 +65,10 @@ eras! {
 
 eras! {
     enum PlayerInputFormat {
-        /// Sideways and forward floats, jump and sneak flags.
+        /// Sideways and forward floats, jump and sneak booleans.
         V1_7 = V_1_7_2,
+        /// Sideways and forward floats, flags byte (jump 1, sneak 2).
+        V1_8 = V_1_8,
         /// Bitmask; same as 26.3.
         V1_21_2 = V_1_21_2,
     }
@@ -288,13 +290,19 @@ pub fn play_to_current(
     }
 
     // PLAYER_INPUT
-    if new_id == play::PLAYER_INPUT.current()
-        && PlayerInputFormat::of(version) == PlayerInputFormat::V1_7
-    {
+    let input_format = PlayerInputFormat::of(version);
+    if new_id == play::PLAYER_INPUT.current() && input_format < PlayerInputFormat::V1_21_2 {
         let sideways = payload.get_f32_be().unwrap_or(0.0);
         let forward = payload.get_f32_be().unwrap_or(0.0);
-        let jumping = payload.get_bool().unwrap_or(false);
-        let sneaking = payload.get_bool().unwrap_or(false);
+        let (jumping, sneaking) = if input_format == PlayerInputFormat::V1_7 {
+            (
+                payload.get_bool().unwrap_or(false),
+                payload.get_bool().unwrap_or(false),
+            )
+        } else {
+            let flags = payload.get_u8().unwrap_or(0);
+            (flags & 1 != 0, flags & 2 != 0)
+        };
         let mut input: i8 = 0;
         if forward > 0.0 {
             input |= 1;
@@ -390,6 +398,34 @@ mod tests {
         assert_eq!(
             player_command_to_current(&[5, 0, 0], JavaMinecraftVersion::V_1_21_4),
             None
+        );
+    }
+
+    #[test]
+    fn legacy_player_input_flags() {
+        let input = |payload: &[u8], version| {
+            play_to_current(play::PLAYER_INPUT.current(), payload, version, || {
+                (0.0, 0.0)
+            })
+        };
+        // Sideways 0.98 (left), forward -0.98 (back)
+        let floats = [0x3F, 0x7A, 0xE1, 0x48, 0xBF, 0x7A, 0xE1, 0x48];
+        // 1.8+: one flags byte, jump 1, sneak 2
+        assert_eq!(
+            input(&[&floats[..], &[3]].concat(), JavaMinecraftVersion::V_1_21),
+            Some(vec![2 | 4 | 16 | 32])
+        );
+        assert_eq!(
+            input(&[&floats[..], &[2]].concat(), JavaMinecraftVersion::V_1_8),
+            Some(vec![2 | 4 | 32])
+        );
+        // 1.7: jump and sneak booleans
+        assert_eq!(
+            input(
+                &[&floats[..], &[0, 1]].concat(),
+                JavaMinecraftVersion::V_1_7_2
+            ),
+            Some(vec![2 | 4 | 32])
         );
     }
 
