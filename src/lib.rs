@@ -52,7 +52,10 @@ fn connection_features(version: JavaMinecraftVersion) -> JavaConnectionFeatures 
     })
 }
 
-/// The multi-version plugin allowing Minecraft Java clients across versions (1.7 - 26.2)
+/// Oldest client with chunks, player info and entity data translated.
+const OLDEST_SUPPORTED: JavaMinecraftVersion = JavaMinecraftVersion::V_1_21;
+
+/// The multi-version plugin allowing Minecraft Java clients across versions (1.21 - 26.2)
 /// to connect to a Pumpkin 26.3 server.
 pub struct MultiVersionPlugin;
 
@@ -78,7 +81,7 @@ impl Plugin for MultiVersionPlugin {
 
         let versions: Vec<_> = JavaMinecraftVersion::KNOWN
             .iter()
-            .filter(|&&version| version != CURRENT_MC_VERSION)
+            .filter(|&&version| version >= OLDEST_SUPPORTED && version != CURRENT_MC_VERSION)
             .map(|&version| to_wasm_java_version(version))
             .collect();
         context.register_java_versions(&versions);
@@ -99,8 +102,7 @@ impl Plugin for MultiVersionPlugin {
         context.register_event_handler(PlayerLeaveHandler, EventPriority::Lowest, false)?;
 
         tracing::info!(
-            "Pumpkin Java Multi-Version Plugin enabled! Supporting {}-{CURRENT_MC_VERSION}",
-            JavaMinecraftVersion::OLDEST
+            "Pumpkin Java Multi-Version Plugin enabled! Supporting {OLDEST_SUPPORTED}-{CURRENT_MC_VERSION}"
         );
         Ok(())
     }
