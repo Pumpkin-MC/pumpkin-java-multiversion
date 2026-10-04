@@ -121,9 +121,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: |
-            target/wasm32-wasip2/debug/*.wasm
-            target/wasm32-wasip2/release/*.wasm
+          files: release-assets/*.wasm
 
   test:
     name: Test
