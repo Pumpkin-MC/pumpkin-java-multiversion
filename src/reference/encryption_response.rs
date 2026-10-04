@@ -20,7 +20,7 @@ impl ReferenceWrite for SEncryptionResponse {
         }
         write.write_var_int(&pumpkin_protocol::VarInt(self.shared_secret.len() as i32))?;
         write.write_all(&self.shared_secret)?;
-        if version >= &JavaMinecraftVersion::V_1_19_3 && version < &JavaMinecraftVersion::V_1_20_2 {
+        if version >= &JavaMinecraftVersion::V_1_19 && version < &JavaMinecraftVersion::V_1_19_3 {
             write.write_bool(true)?;
         }
         write.write_var_int(&pumpkin_protocol::VarInt(self.verify_token.len() as i32))?;

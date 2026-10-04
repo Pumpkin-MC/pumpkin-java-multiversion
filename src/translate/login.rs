@@ -15,9 +15,9 @@ eras! {
         /// Var int length prefixes; same as 26.3.
         V1_8 = V_1_8,
         /// Verify token may be replaced by a salted signature.
-        V1_19_3 = V_1_19_3,
+        V1_19 = V_1_19,
         /// Same as 26.3.
-        V1_20_2 = V_1_20_2,
+        V1_19_3 = V_1_19_3,
     }
 }
 
@@ -33,8 +33,8 @@ eras! {
 /// KEY / ENCRYPTION_RESPONSE.
 pub fn key_to_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
     match KeyFormat::of(version) {
-        KeyFormat::V1_7 | KeyFormat::V1_19_3 => {}
-        KeyFormat::V1_8 | KeyFormat::V1_20_2 => return None,
+        KeyFormat::V1_7 | KeyFormat::V1_19 => {}
+        KeyFormat::V1_8 | KeyFormat::V1_19_3 => return None,
     }
     let packet = SEncryptionResponse::read_legacy(&mut payload, &version).ok()?;
     let mut out = Vec::new();
@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn key_1_19_3_omitted_token_becomes_empty() {
+    fn key_1_19_1_omitted_token_becomes_empty() {
         let secret = b"secret12secret12";
         let signature = b"signature-bytes!!";
         let mut payload = Vec::new();
@@ -138,7 +138,7 @@ mod tests {
             .unwrap();
         payload.extend_from_slice(signature);
 
-        let (id, out) = translate_key(JavaMinecraftVersion::V_1_19_3, &payload).unwrap();
+        let (id, out) = translate_key(JavaMinecraftVersion::V_1_19_1, &payload).unwrap();
         assert_eq!(id, ids::serverbound::login::KEY.current());
         let read = read_current(&out);
         assert_eq!(&*read.shared_secret, secret);
@@ -146,24 +146,26 @@ mod tests {
     }
 
     #[test]
-    fn key_1_19_3_with_token_keeps_token() {
+    fn key_1_19_1_with_token_keeps_token() {
         let secret = b"secret12secret12";
         let token = b"tokn";
-        let payload = key_payload(JavaMinecraftVersion::V_1_19_3, secret, token);
-        let (_, out) = translate_key(JavaMinecraftVersion::V_1_19_3, &payload).unwrap();
+        let payload = key_payload(JavaMinecraftVersion::V_1_19_1, secret, token);
+        let (_, out) = translate_key(JavaMinecraftVersion::V_1_19_1, &payload).unwrap();
         let read = read_current(&out);
         assert_eq!(&*read.shared_secret, secret);
         assert_eq!(&*read.verify_token, token);
     }
 
     #[test]
-    fn key_1_8_payload_is_already_current() {
+    fn key_1_8_and_1_19_3_payloads_are_already_current() {
         let secret = b"secret12secret12";
         let token = b"tokn";
-        let payload = key_payload(JavaMinecraftVersion::V_1_8, secret, token);
-        let (id, out) = translate_key(JavaMinecraftVersion::V_1_8, &payload).unwrap();
-        assert_eq!(id, ids::serverbound::login::KEY.current());
-        assert_eq!(out, payload);
+        for version in [JavaMinecraftVersion::V_1_8, JavaMinecraftVersion::V_1_19_3] {
+            let payload = key_payload(version, secret, token);
+            let (id, out) = translate_key(version, &payload).unwrap();
+            assert_eq!(id, ids::serverbound::login::KEY.current());
+            assert_eq!(out, payload);
+        }
     }
 
     #[test]

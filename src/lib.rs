@@ -41,7 +41,7 @@ fn connection_features(version: JavaMinecraftVersion) -> JavaConnectionFeatures 
             JavaConnectionFeatures::PLAYER_LOADED,
         ),
         (
-            (JavaMinecraftVersion::V_1_19_3..JavaMinecraftVersion::V_1_20_2).contains(&version),
+            (JavaMinecraftVersion::V_1_19..JavaMinecraftVersion::V_1_19_3).contains(&version),
             JavaConnectionFeatures::OPTIONAL_VERIFY_TOKEN,
         ),
     ]
