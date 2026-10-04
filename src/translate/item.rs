@@ -46,7 +46,7 @@ eras! {
 }
 
 eras! {
-    enum CustomModelDataFormat {
+    pub enum CustomModelDataFormat {
         /// One var int.
         V1_20_5 = V_1_20_5,
         /// Float, flag, string and color lists; same as 26.3.

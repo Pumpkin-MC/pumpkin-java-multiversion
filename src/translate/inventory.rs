@@ -1,7 +1,11 @@
 //! Inventory items: container content and slots, cursor, player inventory, equipment, and the
 //! creative slots and clicks sent back.
 
-use pumpkin_data::{data_component::DataComponent, item_stack::ItemStack};
+use pumpkin_data::{
+    block_properties::BLOCK_ENTITY_TYPES, data_component::DataComponent, entity::EntityType,
+    item_stack::ItemStack,
+};
+use pumpkin_nbt::tag::NbtTag;
 use pumpkin_protocol::java::legacy::{LegacyReadExt, LegacyWriteExt};
 use pumpkin_protocol::{
     VarInt,
@@ -15,7 +19,7 @@ use crate::remap::{
     item_id_remap::remap_item_id_from_version,
 };
 use crate::translate::{
-    item::{ItemFormat, NestedItemFormat, write_item_for_version},
+    item::{CustomModelDataFormat, ItemFormat, NestedItemFormat, write_item_for_version},
     nbt::skip_client_nbt,
 };
 use pumpkin_protocol::java::legacy::slot_to_version;
@@ -48,6 +52,35 @@ eras! {
         Legacy = V_1_7_2,
         /// Length-prefixed components in creative slots, hashed stacks in clicks; same as 26.3.
         V1_21_5 = V_1_21_5,
+    }
+}
+
+eras! {
+    enum TooltipFormat {
+        /// Show-in-tooltip flags in components, `hide_tooltip` and `hide_additional_tooltip`.
+        V1_20_5 = V_1_20_5,
+        /// Their ids shifted by the components added in 1.21.2.
+        V1_21_2 = V_1_21_2,
+        /// Tooltip display component; same as 26.3.
+        V1_21_5 = V_1_21_5,
+    }
+}
+
+eras! {
+    enum PotionContentsFormat {
+        /// No custom name.
+        V1_20_5 = V_1_20_5,
+        /// Same as 26.3.
+        V1_21_2 = V_1_21_2,
+    }
+}
+
+eras! {
+    enum TypedDataFormat {
+        /// Entity and block entity data carry their type as the NBT `id`.
+        V1_20_5 = V_1_20_5,
+        /// Type id before the NBT; same as 26.3.
+        V1_21_9 = V_1_21_9,
     }
 }
 
@@ -101,14 +134,7 @@ fn read_legacy_item(read: &mut &[u8], version: JavaMinecraftVersion) -> Option<C
                 return Some(ClientItem::Empty);
             }
             let id = u16::try_from(read.get_var_int().ok()?.0).ok()?;
-            let added = read.get_var_int().ok()?.0;
-            let removed = read.get_var_int().ok()?.0;
-            if added > 0 {
-                return None;
-            }
-            for _ in 0..removed {
-                read.get_var_int().ok()?;
-            }
+            patch_to_current(read, version, false, &mut Vec::new())?;
             (id, count)
         }
     };
@@ -282,16 +308,154 @@ fn write_item_id_to_current(
     out.write_var_int(&VarInt(i32::from(id))).ok()
 }
 
-/// A client component id as 26.3's component, `None` when 26.3 has no such component.
-fn component_to_current(
-    read: &mut &[u8],
-    version: JavaMinecraftVersion,
-) -> Option<Option<DataComponent>> {
-    let id = component_id_to_current(read, version)?;
-    Some(id.and_then(|id| DataComponent::try_from_id(u8::try_from(id.0).ok()?)))
+/// A client component, as 26.3 knows it.
+enum ClientComponent {
+    Current(DataComponent),
+    /// Part of the tooltip display since 1.21.5.
+    HideTooltip,
+    /// Part of the tooltip display since 1.21.5.
+    HideAdditionalTooltip,
+    /// 26.3 has no such component.
+    Unknown,
 }
 
-/// An optional stack with length-prefixed components, as 26.3's ids and payloads.
+fn read_client_component(
+    read: &mut &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<ClientComponent> {
+    let id = read.get_var_int().ok()?.0;
+    let hide_ids = match TooltipFormat::of(version) {
+        TooltipFormat::V1_20_5 => Some((15, 14)),
+        TooltipFormat::V1_21_2 => Some((16, 15)),
+        TooltipFormat::V1_21_5 => None,
+    };
+    match hide_ids {
+        Some((hide, _)) if id == hide => return Some(ClientComponent::HideTooltip),
+        Some((_, additional)) if id == additional => {
+            return Some(ClientComponent::HideAdditionalTooltip);
+        }
+        _ => {}
+    }
+    let mapped = remap_data_component_type_id_from_version(id as u32, version);
+    let component = (mapped != 0 || id == 0)
+        .then(|| DataComponent::try_from_id(u8::try_from(mapped).ok()?))
+        .flatten();
+    Some(component.map_or(ClientComponent::Unknown, ClientComponent::Current))
+}
+
+/// Components `hide_additional_tooltip` hid, as ViaVersion maps them.
+const HIDE_ADDITIONAL: [DataComponent; 17] = [
+    DataComponent::BannerPatterns,
+    DataComponent::Bees,
+    DataComponent::BlockEntityData,
+    DataComponent::BlockState,
+    DataComponent::BundleContents,
+    DataComponent::ChargedProjectiles,
+    DataComponent::Container,
+    DataComponent::ContainerLoot,
+    DataComponent::FireworkExplosion,
+    DataComponent::Fireworks,
+    DataComponent::Instrument,
+    DataComponent::MapId,
+    DataComponent::PaintingVariant,
+    DataComponent::PotDecorations,
+    DataComponent::PotionContents,
+    DataComponent::TropicalFishPattern,
+    DataComponent::WrittenBookContent,
+];
+
+/// The tooltip display of a stack from before 1.21.5, gathered from its components.
+#[derive(Default)]
+struct Tooltip {
+    hide: bool,
+    hidden: Vec<DataComponent>,
+}
+
+impl Tooltip {
+    fn hide_component(&mut self, id: DataComponent) {
+        if !self.hidden.contains(&id) {
+            self.hidden.push(id);
+        }
+    }
+}
+
+/// A client's component patch as 26.3's. Only `top_level` stacks carry component lengths in 26.3,
+/// and from the client since 1.21.5.
+fn patch_to_current(
+    read: &mut &[u8],
+    version: JavaMinecraftVersion,
+    top_level: bool,
+    out: &mut Vec<u8>,
+) -> Option<()> {
+    let delimited = top_level && ClientItemFormat::of(version) == ClientItemFormat::V1_21_5;
+    let added = read.get_var_int().ok()?.0;
+    let removed = read.get_var_int().ok()?.0;
+    let mut tooltip = Tooltip::default();
+    let mut components = Vec::new();
+    for _ in 0..added {
+        let component = read_client_component(read, version)?;
+        let mut data;
+        let payload: &mut &[u8] = if delimited {
+            let len = usize::try_from(read.get_var_int().ok()?.0).ok()?;
+            let rest;
+            (data, rest) = read.split_at_checked(len)?;
+            *read = rest;
+            &mut data
+        } else {
+            &mut *read
+        };
+        match component {
+            ClientComponent::Current(id) => {
+                let mut out = Vec::new();
+                component_payload_to_current(id, payload, version, &mut out, &mut tooltip)?;
+                components.push((id, out));
+            }
+            ClientComponent::HideTooltip => tooltip.hide = true,
+            ClientComponent::HideAdditionalTooltip => {
+                HIDE_ADDITIONAL
+                    .into_iter()
+                    .for_each(|id| tooltip.hide_component(id));
+            }
+            // Without a length its end is unknown
+            ClientComponent::Unknown if !delimited => return None,
+            ClientComponent::Unknown => {}
+        }
+    }
+    if tooltip.hide || !tooltip.hidden.is_empty() {
+        let mut payload = Vec::new();
+        payload.write_bool(tooltip.hide).ok()?;
+        payload
+            .write_var_int(&VarInt(tooltip.hidden.len() as i32))
+            .ok()?;
+        for id in tooltip.hidden {
+            payload.write_var_int(&VarInt(i32::from(id.to_id()))).ok()?;
+        }
+        components.push((DataComponent::TooltipDisplay, payload));
+    }
+    let mut removed_ids = Vec::new();
+    for _ in 0..removed {
+        if let ClientComponent::Current(id) = read_client_component(read, version)? {
+            removed_ids.push(id);
+        }
+    }
+
+    out.write_var_int(&VarInt(components.len() as i32)).ok()?;
+    out.write_var_int(&VarInt(removed_ids.len() as i32)).ok()?;
+    for (id, payload) in components {
+        out.write_var_int(&VarInt(i32::from(id.to_id()))).ok()?;
+        if top_level {
+            out.write_var_int(&VarInt(payload.len() as i32)).ok()?;
+        }
+        out.extend_from_slice(&payload);
+    }
+    for id in removed_ids {
+        out.write_var_int(&VarInt(i32::from(id.to_id()))).ok()?;
+    }
+    Some(())
+}
+
+/// An optional stack with length-prefixed components (unprefixed before 1.21.5), as 26.3's ids
+/// and payloads.
 fn untrusted_item_to_current(
     read: &mut &[u8],
     version: JavaMinecraftVersion,
@@ -303,49 +467,41 @@ fn untrusted_item_to_current(
         return Some(());
     }
     write_item_id_to_current(read, version, out)?;
-    let added = read.get_var_int().ok()?.0;
-    let removed = read.get_var_int().ok()?.0;
-    let mut added_out = Vec::new();
-    let mut added_count = 0;
-    for _ in 0..added {
-        let id = component_to_current(read, version)?;
-        let len = read.get_var_int().ok()?;
-        let (mut data, rest) = read.split_at_checked(usize::try_from(len.0).ok()?)?;
-        *read = rest;
-        if let Some(id) = id {
-            let mut payload = Vec::new();
-            component_payload_to_current(id, &mut data, version, &mut payload)?;
-            added_out
-                .write_var_int(&VarInt(i32::from(id.to_id())))
-                .ok()?;
-            added_out
-                .write_var_int(&VarInt(payload.len() as i32))
-                .ok()?;
-            added_out.extend_from_slice(&payload);
-            added_count += 1;
-        }
+    patch_to_current(read, version, true, out)
+}
+
+/// Copies a payload already in the 26.3 format, measured by the core's decoder.
+fn copy_payload(id: DataComponent, read: &mut &[u8], out: &mut Vec<u8>) -> Option<()> {
+    let start = *read;
+    deserialize(id, read).ok()?;
+    out.extend_from_slice(&start[..start.len() - read.len()]);
+    Some(())
+}
+
+/// Skips status effect details: amplifier, duration, three flags and the optional hidden effect.
+fn skip_effect_details(read: &mut &[u8]) -> Option<()> {
+    read.get_var_int().ok()?;
+    read.get_var_int().ok()?;
+    for _ in 0..3 {
+        read.get_bool().ok()?;
     }
-    let mut removed_ids = Vec::new();
-    for _ in 0..removed {
-        removed_ids.extend(component_id_to_current(read, version)?);
-    }
-    out.write_var_int(&VarInt(added_count)).ok()?;
-    out.write_var_int(&VarInt(removed_ids.len() as i32)).ok()?;
-    out.extend_from_slice(&added_out);
-    for id in removed_ids {
-        out.write_var_int(&id).ok()?;
+    if read.get_bool().ok()? {
+        skip_effect_details(read)?;
     }
     Some(())
 }
 
 /// A client component payload in the 26.3 format. Components holding items get them rewritten.
-// TODO: components whose format changed since 1.21.5 fail to read and drop the stack.
+// TODO: components whose format changed since the client's version and are not converted here
+// fail to read and drop the stack.
 fn component_payload_to_current(
     id: DataComponent,
     read: &mut &[u8],
     version: JavaMinecraftVersion,
     out: &mut Vec<u8>,
+    tooltip: &mut Tooltip,
 ) -> Option<()> {
+    let show_flags = TooltipFormat::of(version) < TooltipFormat::V1_21_5;
     match id {
         DataComponent::BundleContents | DataComponent::ChargedProjectiles => {
             let len = read.get_var_int().ok()?;
@@ -377,11 +533,83 @@ fn component_payload_to_current(
                 }
             }
         }
-        _ => {
-            let start = *read;
-            deserialize(id, read).ok()?;
-            out.extend_from_slice(&start[..start.len() - read.len()]);
+        // Show-in-tooltip flags moved to the tooltip display
+        DataComponent::Unbreakable if show_flags => {
+            if !read.get_bool().ok()? {
+                tooltip.hide_component(id);
+            }
         }
+        DataComponent::Enchantments
+        | DataComponent::StoredEnchantments
+        | DataComponent::DyedColor
+            if show_flags =>
+        {
+            copy_payload(id, read, out)?;
+            if !read.get_bool().ok()? {
+                tooltip.hide_component(id);
+            }
+        }
+        // Not converted yet; reading them as 26.3's would misread the rest of the stack
+        DataComponent::CanPlaceOn
+        | DataComponent::CanBreak
+        | DataComponent::AttributeModifiers
+        | DataComponent::Trim
+        | DataComponent::JukeboxPlayable
+        | DataComponent::Tool
+        | DataComponent::Instrument
+        | DataComponent::Profile
+        | DataComponent::Bees
+        | DataComponent::Equippable
+            if show_flags =>
+        {
+            return None;
+        }
+        DataComponent::CustomModelData
+            if CustomModelDataFormat::of(version) == CustomModelDataFormat::V1_20_5 =>
+        {
+            // The value becomes the only float, as ViaVersion maps it
+            let value = read.get_var_int().ok()?.0;
+            out.write_var_int(&VarInt(1)).ok()?;
+            out.write_f32_be(value as f32).ok()?;
+            for _ in 0..3 {
+                out.write_var_int(&VarInt(0)).ok()?;
+            }
+        }
+        DataComponent::PotionContents
+            if PotionContentsFormat::of(version) == PotionContentsFormat::V1_20_5 =>
+        {
+            let start = *read;
+            if read.get_bool().ok()? {
+                read.get_var_int().ok()?;
+            }
+            if read.get_bool().ok()? {
+                read.get_i32_be().ok()?;
+            }
+            for _ in 0..read.get_var_int().ok()?.0 {
+                read.get_var_int().ok()?;
+                skip_effect_details(read)?;
+            }
+            out.extend_from_slice(&start[..start.len() - read.len()]);
+            out.write_bool(false).ok()?; // custom name
+        }
+        DataComponent::EntityData | DataComponent::BlockEntityData
+            if TypedDataFormat::of(version) == TypedDataFormat::V1_20_5 =>
+        {
+            let Some(NbtTag::Compound(mut nbt)) = read.get_nbt_owned().ok()? else {
+                return None;
+            };
+            let name = nbt.get_string("id")?;
+            let name = name.strip_prefix("minecraft:").unwrap_or(name);
+            let type_id = if id == DataComponent::EntityData {
+                i32::from(EntityType::from_name(name)?.id)
+            } else {
+                BLOCK_ENTITY_TYPES.iter().position(|n| *n == name)? as i32
+            };
+            nbt.child_tags.remove("id");
+            out.write_var_int(&VarInt(type_id)).ok()?;
+            out.write_compound_nbt(&nbt).ok()?;
+        }
+        _ => copy_payload(id, read, out)?,
     }
     Some(())
 }
@@ -403,28 +631,7 @@ fn nested_item_to_current(
         None => read.get_var_int().ok()?,
     };
     out.write_var_int(&count).ok()?;
-    let added = read.get_var_int().ok()?.0;
-    let removed = read.get_var_int().ok()?.0;
-    let mut added_out = Vec::new();
-    for _ in 0..added {
-        // Without a length, a component unknown to 26.3 cannot be skipped
-        let id = component_to_current(read, version)??;
-        added_out
-            .write_var_int(&VarInt(i32::from(id.to_id())))
-            .ok()?;
-        component_payload_to_current(id, read, version, &mut added_out)?;
-    }
-    let mut removed_ids = Vec::new();
-    for _ in 0..removed {
-        removed_ids.extend(component_id_to_current(read, version)?);
-    }
-    out.write_var_int(&VarInt(added)).ok()?;
-    out.write_var_int(&VarInt(removed_ids.len() as i32)).ok()?;
-    out.extend_from_slice(&added_out);
-    for id in removed_ids {
-        out.write_var_int(&id).ok()?;
-    }
-    Some(())
+    patch_to_current(read, version, false, out)
 }
 
 /// An optional hashed stack, as 26.3's ids.
@@ -469,8 +676,12 @@ pub fn creative_slot_to_current(
 ) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     out.write_i16_be(payload.get_i16_be().ok()?).ok()?;
-    if ClientItemFormat::of(version) == ClientItemFormat::V1_21_5 {
+    if ItemFormat::of(version) == ItemFormat::V1_20_5 {
         untrusted_item_to_current(&mut payload, version, &mut out)?;
+        // Left over bytes mean a component was misread
+        if !payload.is_empty() {
+            return None;
+        }
     } else {
         write_untrusted(&read_legacy_item(&mut payload, version)?, &mut out)?;
     }
@@ -679,20 +890,52 @@ mod tests {
     }
 
     #[test]
-    fn creative_slot_with_unsized_components_is_dropped() {
+    fn creative_slot_reads_unsized_components() {
         let version = JavaMinecraftVersion::V_1_21_4;
         let dirt = remap_item_id_for_version(Item::DIRT.id, version);
-        let mut plain = vec![0, 36];
-        plain.extend(current_untrusted(1, dirt));
-        let mut expected = vec![0, 36];
-        expected.extend(current_untrusted(1, Item::DIRT.id));
-        assert_eq!(creative_slot_to_current(&plain, version), Some(expected));
+        let creative = |components: &[u8]| {
+            let mut client = vec![0, 36, 1];
+            client.write_var_int(&VarInt(i32::from(dirt))).unwrap();
+            client.extend_from_slice(components);
+            creative_slot_to_current(&client, version)
+        };
+        let expected = |components: &[u8]| {
+            let mut out = vec![0, 36, 1];
+            out.write_var_int(&VarInt(i32::from(Item::DIRT.id)))
+                .unwrap();
+            out.extend_from_slice(components);
+            Some(out)
+        };
 
-        // One added component, whose data has no length before 1.21.5
-        let mut patched = vec![0, 36, 1];
-        patched.write_var_int(&VarInt(i32::from(dirt))).unwrap();
-        patched.extend_from_slice(&[1, 0, 1, 5]);
-        assert_eq!(creative_slot_to_current(&patched, version), None);
+        // Max stack size 5, which has no length before 1.21.5 but one in 26.3
+        assert_eq!(creative(&[1, 0, 1, 5]), expected(&[1, 0, 1, 1, 5]));
+        // Stored enchantments hidden from the tooltip, hide tooltip
+        assert_eq!(
+            creative(&[2, 0, 33, 1, 0, 3, 0, 16]),
+            expected(&[2, 0, 45, 3, 1, 0, 3, 18, 3, 1, 1, 45])
+        );
+        // Attribute modifiers are not converted yet
+        assert_eq!(creative(&[1, 0, 13, 0, 1]), None);
+        // Bytes left over after the stack
+        assert_eq!(creative(&[1, 0, 1, 5, 0]), None);
+    }
+
+    #[test]
+    fn creative_custom_model_data_becomes_a_float() {
+        let version = JavaMinecraftVersion::V_1_21;
+        let dirt = remap_item_id_for_version(Item::DIRT.id, version);
+        let mut client = vec![0, 36, 1];
+        client.write_var_int(&VarInt(i32::from(dirt))).unwrap();
+        client.extend_from_slice(&[1, 0, 13, 7]);
+
+        let mut expected = vec![0, 36, 1];
+        expected
+            .write_var_int(&VarInt(i32::from(Item::DIRT.id)))
+            .unwrap();
+        expected.extend_from_slice(&[1, 0, 17, 8, 1]);
+        expected.extend_from_slice(&7.0f32.to_be_bytes());
+        expected.extend_from_slice(&[0, 0, 0]);
+        assert_eq!(creative_slot_to_current(&client, version), Some(expected));
     }
 
     #[test]
