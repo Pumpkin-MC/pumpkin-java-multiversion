@@ -113,10 +113,8 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wasm-artifacts
-          path: |
-            target/wasm32-wasip2/debug/*.wasm
-            target/wasm32-wasip2/release/*.wasm
+          name: pumpkin-java-multiversion
+          path: release-assets/
 
       - name: Create draft release on tag push
         if: startsWith(github.ref, 'refs/tags/v')
