@@ -47,6 +47,8 @@ eras! {
         V1_7 = V_1_7_2,
         /// Var ints.
         V1_8 = V_1_8,
+        /// Sneak actions also sent as the shift flag of PLAYER_INPUT.
+        V1_21_2 = V_1_21_2,
         /// Sneak actions removed; same as 26.3.
         V1_21_6 = V_1_21_6,
     }
@@ -127,6 +129,50 @@ pub fn interact_to_current(
             .write_packet_data(&mut out)
             .ok()?;
             Some((play::INTERACT.current(), out))
+        }
+    }
+}
+
+/// PLAYER_COMMAND: sneak actions become the shift flag of
+/// PLAYER_INPUT, or are dropped when the client's PLAYER_INPUT already carries it.
+// TODO: before 1.21.2 infer the movement, jump and sprint keys per tick (needs per-player state)
+pub fn player_command_to_current(
+    mut payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<(i32, Vec<u8>)> {
+    let format = PlayerCommandFormat::of(version);
+    if format == PlayerCommandFormat::V1_21_6 {
+        return Some((play::PLAYER_COMMAND.current(), payload.to_vec()));
+    }
+    let var_ints = format >= PlayerCommandFormat::V1_8;
+    let entity_id = if var_ints {
+        payload.get_var_int().ok()?
+    } else {
+        VarInt(payload.get_i32_be().ok()?)
+    };
+    let action_id = if var_ints {
+        payload.get_var_int().ok()?
+    } else {
+        VarInt(i32::from(payload.get_u8().ok()?))
+    };
+    let jump_boost = if var_ints {
+        payload.get_var_int().ok()?
+    } else {
+        VarInt(payload.get_i32_be().ok()?)
+    };
+    let mut out = Vec::new();
+    match action_id.0 {
+        // Off a vehicle older clients only report sneaking here, so the other keys stay unset
+        0 | 1 if format < PlayerCommandFormat::V1_21_2 => {
+            out.write_i8(if action_id.0 == 0 { 32 } else { 0 }).ok()?;
+            Some((play::PLAYER_INPUT.current(), out))
+        }
+        0 | 1 => None,
+        action => {
+            out.write_var_int(&entity_id).ok()?;
+            out.write_var_int(&VarInt(action - 2)).ok()?;
+            out.write_var_int(&jump_boost).ok()?;
+            Some((play::PLAYER_COMMAND.current(), out))
         }
     }
 }
@@ -226,37 +272,6 @@ pub fn play_to_current(
         return Some(out);
     }
 
-    // PLAYER_COMMAND
-    let command = PlayerCommandFormat::of(version);
-    if new_id == play::PLAYER_COMMAND.current() && command != PlayerCommandFormat::V1_21_6 {
-        let var_ints = command == PlayerCommandFormat::V1_8;
-        let entity_id = if var_ints {
-            payload.get_var_int().ok()?
-        } else {
-            VarInt(payload.get_i32_be().ok()?)
-        };
-        let action_id = if var_ints {
-            payload.get_var_int().ok()?
-        } else {
-            VarInt(i32::from(payload.get_u8().ok()?))
-        };
-        let jump_boost = if var_ints {
-            payload.get_var_int().ok()?
-        } else {
-            VarInt(payload.get_i32_be().ok()?)
-        };
-        let modern_action = if action_id.0 >= 2 {
-            VarInt(action_id.0 - 2)
-        } else {
-            return Some(Vec::new());
-        };
-        let mut out = Vec::new();
-        let _ = out.write_var_int(&entity_id);
-        let _ = out.write_var_int(&modern_action);
-        let _ = out.write_var_int(&jump_boost);
-        return Some(out);
-    }
-
     // RESOURCE_PACK response
     if new_id == play::RESOURCE_PACK.current() {
         return super::resource_pack::response_to_current(payload, version);
@@ -353,6 +368,42 @@ mod tests {
         );
         // The plain interact after an interact-at is dropped
         assert_eq!(interact_to_current(&[5, 0, 0, 0], V1_21_11), None);
+    }
+
+    #[test]
+    fn sneak_command_becomes_player_input() {
+        // Entity 5, start / stop sneaking, no jump boost
+        assert_eq!(
+            player_command_to_current(&[5, 0, 0], JavaMinecraftVersion::V_1_8),
+            Some((play::PLAYER_INPUT.current(), vec![32]))
+        );
+        assert_eq!(
+            player_command_to_current(&[5, 1, 0], JavaMinecraftVersion::V_1_21),
+            Some((play::PLAYER_INPUT.current(), vec![0]))
+        );
+        // 1.7: i32 entity, u8 action, i32 jump boost
+        assert_eq!(
+            player_command_to_current(&[0, 0, 0, 5, 0, 0, 0, 0, 0], JavaMinecraftVersion::V_1_7_2),
+            Some((play::PLAYER_INPUT.current(), vec![32]))
+        );
+        // PLAYER_INPUT already carries the shift flag
+        assert_eq!(
+            player_command_to_current(&[5, 0, 0], JavaMinecraftVersion::V_1_21_4),
+            None
+        );
+    }
+
+    #[test]
+    fn other_commands_shift_down() {
+        // Start sprinting: 3 before 1.21.6, 1 in 26.3
+        assert_eq!(
+            player_command_to_current(&[5, 3, 0], JavaMinecraftVersion::V_1_21_4),
+            Some((play::PLAYER_COMMAND.current(), vec![5, 1, 0]))
+        );
+        assert_eq!(
+            player_command_to_current(&[5, 1, 0], V1_21_11),
+            Some((play::PLAYER_COMMAND.current(), vec![5, 1, 0]))
+        );
     }
 
     #[test]

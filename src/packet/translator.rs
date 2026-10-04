@@ -277,6 +277,9 @@ impl PacketTranslator {
         if new_id == ids::serverbound::play::INTERACT.current() {
             return serverbound::interact_to_current(raw_payload, version);
         }
+        if new_id == ids::serverbound::play::PLAYER_COMMAND.current() {
+            return serverbound::player_command_to_current(raw_payload, version);
+        }
         // Dropped when unreadable: kept as is, the client's item ids would be stored
         if new_id == ids::serverbound::play::SET_CREATIVE_MODE_SLOT.current() {
             return inventory::creative_slot_to_current(raw_payload, version)
