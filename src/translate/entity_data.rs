@@ -1,5 +1,6 @@
 //! Entity data: SET_ENTITY_DATA, and the entity types its field ids depend on.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex, PoisonError};
 
@@ -61,17 +62,40 @@ fn tables_for(version: JavaMinecraftVersion) -> Option<&'static EntityDataTables
     })
 }
 
-/// 26.3 entity type and spawns sent to older clients, by entity id. Pumpkin never reuses ids.
-static ENTITY_TYPES: LazyLock<Mutex<HashMap<i32, (u16, u32)>>> =
+/// 26.3 entity type of each entity sent to an older client, by client and entity id.
+/// Pumpkin never reuses ids.
+static ENTITY_TYPES: LazyLock<Mutex<HashMap<u128, HashMap<i32, u16>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+thread_local! {
+    /// Client whose packet is being translated.
+    static VIEWER: Cell<u128> = const { Cell::new(0) };
+}
+
+/// Runs `translate` for a packet sent to `viewer`.
+pub fn for_viewer<T>(viewer: u128, translate: impl FnOnce() -> T) -> T {
+    let previous = VIEWER.replace(viewer);
+    let result = translate();
+    VIEWER.set(previous);
+    result
+}
+
+/// Forgets the entities of a client that left.
+pub fn forget_viewer(viewer: u128) {
+    let mut types = ENTITY_TYPES.lock().unwrap_or_else(PoisonError::into_inner);
+    types.remove(&viewer);
+}
 
 /// Remembers the type of an entity spawned for an older client.
 pub fn track_spawn(entity_id: i32, entity_type: u16) {
     let mut types = ENTITY_TYPES.lock().unwrap_or_else(PoisonError::into_inner);
-    types.entry(entity_id).or_insert((entity_type, 0)).1 += 1;
+    types
+        .entry(VIEWER.get())
+        .or_default()
+        .insert(entity_id, entity_type);
 }
 
-/// REMOVE_ENTITIES: forgets entity types no older client sees anymore.
+/// REMOVE_ENTITIES: forgets the removed entity types.
 pub fn remove_entities_from_current(
     payload: &[u8],
     _version: JavaMinecraftVersion,
@@ -79,12 +103,9 @@ pub fn remove_entities_from_current(
     let mut read = payload;
     let ids = read.get_list(|read| read.get_var_int()).ok()?;
     let mut types = ENTITY_TYPES.lock().unwrap_or_else(PoisonError::into_inner);
-    for VarInt(id) in ids {
-        if let Some((_, spawns)) = types.get_mut(&id) {
-            *spawns -= 1;
-            if *spawns == 0 {
-                types.remove(&id);
-            }
+    if let Some(viewed) = types.get_mut(&VIEWER.get()) {
+        for VarInt(id) in ids {
+            viewed.remove(&id);
         }
     }
     Some(payload.to_vec())
@@ -92,7 +113,7 @@ pub fn remove_entities_from_current(
 
 fn entity_type(entity_id: i32) -> Option<u16> {
     let types = ENTITY_TYPES.lock().unwrap_or_else(PoisonError::into_inner);
-    types.get(&entity_id).map(|(entity_type, _)| *entity_type)
+    types.get(&VIEWER.get())?.get(&entity_id).copied()
 }
 
 fn copy(read: &mut &[u8], len: usize, out: &mut Vec<u8>) -> Option<()> {
@@ -333,5 +354,14 @@ mod tests {
             38
         );
         assert_eq!(tables.serializers[MetaDataType::DYE_COLOR.id as usize], -1);
+    }
+
+    #[test]
+    fn tracking_is_per_viewer_and_forgotten_on_leave() {
+        for_viewer(1, || track_spawn(-9, EntityType::COW.id));
+        assert_eq!(for_viewer(1, || entity_type(-9)), Some(EntityType::COW.id));
+        assert_eq!(for_viewer(2, || entity_type(-9)), None);
+        forget_viewer(1);
+        assert_eq!(for_viewer(1, || entity_type(-9)), None);
     }
 }

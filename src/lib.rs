@@ -13,16 +13,18 @@ use pumpkin_plugin_api::{
             ConnectionPacketReceivedEvent, ConnectionPacketSentEvent, PacketReceivedEvent,
             PacketSentEvent,
         },
+        player::player_leave::PlayerLeaveEvent,
     },
     events_wit::{
         ConnectionPacketReceivedEventData, ConnectionPacketSentEventData, JavaConnectionFeatures,
-        PacketReceivedEventData, PacketSentEventData, RawPacket,
+        PacketReceivedEventData, PacketSentEventData, PlayerLeaveEventData, RawPacket,
     },
+    player::Player,
     register_plugin,
 };
 
 use crate::packet::translator::{PacketTranslator, from_wasm_java_version, to_wasm_java_version};
-use crate::translate::tags;
+use crate::translate::{entity_data, tags};
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::java::legacy::ids;
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -94,6 +96,8 @@ impl Plugin for MultiVersionPlugin {
         )?;
         context.register_event_handler(ConnectionPacketSentHandler, EventPriority::Lowest, true)?;
 
+        context.register_event_handler(PlayerLeaveHandler, EventPriority::Lowest, false)?;
+
         tracing::info!(
             "Pumpkin Java Multi-Version Plugin enabled! Supporting {}-{CURRENT_MC_VERSION}",
             JavaMinecraftVersion::OLDEST
@@ -151,11 +155,13 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
             }
             let is_join = event.packet_id == ids::clientbound::play::LOGIN.current();
             // A current id means a different packet to the client, so drop what has none
-            match PacketTranslator::translate_outgoing_packet(
-                event.packet_id,
-                &event.raw_payload,
-                version,
-            ) {
+            match entity_data::for_viewer(viewer(&event.player), || {
+                PacketTranslator::translate_outgoing_packet(
+                    event.packet_id,
+                    &event.raw_payload,
+                    version,
+                )
+            }) {
                 Some((new_id, new_payload)) => {
                     event.packet_id = new_id;
                     event.raw_payload = new_payload;
@@ -173,6 +179,22 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
                 event.extra_packets.push(RawPacket { packet_id, payload });
             }
         }
+        event
+    }
+}
+
+/// Key of the client's per-connection translation state.
+fn viewer(player: &Player) -> u128 {
+    let id = player.get_id();
+    (u128::from(id.high) << 64) | u128::from(id.low)
+}
+
+/// Drops the translation state of a leaving client.
+struct PlayerLeaveHandler;
+
+impl EventHandler<PlayerLeaveEvent> for PlayerLeaveHandler {
+    fn handle(&self, _server: Server, event: PlayerLeaveEventData) -> PlayerLeaveEventData {
+        entity_data::forget_viewer(viewer(&event.player));
         event
     }
 }
