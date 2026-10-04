@@ -1,0 +1,3 @@
+[submodule "pumpkin"]
+	path = pumpkin
+	url = https://github.com/Pumpkin-MC/Pumpkin.git

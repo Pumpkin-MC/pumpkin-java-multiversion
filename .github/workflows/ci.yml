@@ -5,6 +5,8 @@ on:
     branches:
       - master
       - main
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - master
@@ -25,6 +27,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -40,9 +44,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Clone Pumpkin dependency
-        run: git clone --depth 1 https://github.com/Pumpkin-MC/Pumpkin.git ../Pumpkin
+        with:
+          submodules: recursive
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -54,20 +57,25 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run Clippy (WASM target)
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo clippy --target wasm32-wasip2 -- -D warnings
 
       - name: Run Clippy (Host target)
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo clippy --all-targets -- -D warnings
 
   build:
     name: Compile & Build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Clone Pumpkin dependency
-        run: git clone --depth 1 https://github.com/Pumpkin-MC/Pumpkin.git ../Pumpkin
+        with:
+          submodules: recursive
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -78,13 +86,42 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check native compilation
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo check --all-targets
 
       - name: Build WASM plugin (debug)
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo build --target wasm32-wasip2
 
       - name: Build WASM plugin (release)
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo build --release --target wasm32-wasip2
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          for file in target/wasm32-wasip2/debug/*.wasm; do
+            cp "$file" "release-assets/debug-$(basename "$file")"
+          done
+          for file in target/wasm32-wasip2/release/*.wasm; do
+            cp "$file" "release-assets/release-$(basename "$file")"
+          done
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pumpkin-java-multiversion
+          path: release-assets/
+
+      - name: Create draft release on tag push
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: release-assets/*.wasm
 
   test:
     name: Test
@@ -92,9 +129,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Clone Pumpkin dependency
-        run: git clone --depth 1 https://github.com/Pumpkin-MC/Pumpkin.git ../Pumpkin
+        with:
+          submodules: recursive
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -103,4 +139,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run unit tests
+        env:
+          RUST_MIN_STACK: 33554432
         run: cargo test --lib --verbose

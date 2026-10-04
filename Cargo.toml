@@ -10,11 +10,11 @@ license = "MIT OR Apache-2.0"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pumpkin-plugin-api = { path = "../Pumpkin/crates/pumpkin-plugin-api", version = "0.2" }
-pumpkin-protocol = { path = "../Pumpkin/crates/pumpkin-protocol", version = "0.2" }
-pumpkin-util = { path = "../Pumpkin/crates/pumpkin-util", version = "0.2" }
-pumpkin-nbt = { path = "../Pumpkin/crates/pumpkin-nbt", version = "0.2" }
-pumpkin-data = { path = "../Pumpkin/crates/pumpkin-data", version = "0.2" }
+pumpkin-plugin-api = { path = "pumpkin/crates/pumpkin-plugin-api", version = "0.2" }
+pumpkin-protocol = { path = "pumpkin/crates/pumpkin-protocol", version = "0.2" }
+pumpkin-util = { path = "pumpkin/crates/pumpkin-util", version = "0.2" }
+pumpkin-nbt = { path = "pumpkin/crates/pumpkin-nbt", version = "0.2" }
+pumpkin-data = { path = "pumpkin/crates/pumpkin-data", version = "0.2" }
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -25,4 +25,4 @@ getrandom = { version = "0.4", features = ["wasm_js"] }
 phf = { version = "0.11", features = ["macros"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-pumpkin-world = { path = "../Pumpkin/crates/pumpkin-world", version = "0.2" }
+pumpkin-world = { path = "pumpkin/crates/pumpkin-world", version = "0.2" }
