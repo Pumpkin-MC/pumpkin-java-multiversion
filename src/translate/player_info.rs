@@ -111,7 +111,7 @@ fn read_entry(read: &mut &[u8], flags: PlayerInfoFlags) -> Option<Entry> {
     })
 }
 
-/// Actions in bit order, as the writer expects them.
+/// The actions present in `entry` ->  the writer orders them by flag.
 fn actions(entry: &Entry) -> Vec<PlayerAction<'_>> {
     let mut actions = Vec::new();
     if let Some((name, properties)) = &entry.add {

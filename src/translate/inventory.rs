@@ -1,11 +1,11 @@
 //! Inventory items: container content and slots, cursor, player inventory, equipment, and the
 //! creative slots and clicks sent back.
 
-use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::{data_component::DataComponent, item_stack::ItemStack};
 use pumpkin_protocol::java::legacy::{LegacyReadExt, LegacyWriteExt};
 use pumpkin_protocol::{
     VarInt,
-    codec::item_stack_seralizer::ItemStackSerializer,
+    codec::{data_component::deserialize, item_stack_seralizer::ItemStackSerializer},
     ser::{NetworkReadExt, NetworkWriteExt},
 };
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -15,7 +15,7 @@ use crate::remap::{
     item_id_remap::remap_item_id_from_version,
 };
 use crate::translate::{
-    item::{ItemFormat, write_item_for_version},
+    item::{ItemFormat, NestedItemFormat, write_item_for_version},
     nbt::skip_client_nbt,
 };
 use pumpkin_protocol::java::legacy::slot_to_version;
@@ -282,8 +282,16 @@ fn write_item_id_to_current(
     out.write_var_int(&VarInt(i32::from(id))).ok()
 }
 
-/// An optional stack with length-prefixed components, as 26.3's ids.
-// TODO: component payloads are kept in the client's format.
+/// A client component id as 26.3's component, `None` when 26.3 has no such component.
+fn component_to_current(
+    read: &mut &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<Option<DataComponent>> {
+    let id = component_id_to_current(read, version)?;
+    Some(id.and_then(|id| DataComponent::try_from_id(u8::try_from(id.0).ok()?)))
+}
+
+/// An optional stack with length-prefixed components, as 26.3's ids and payloads.
 fn untrusted_item_to_current(
     read: &mut &[u8],
     version: JavaMinecraftVersion,
@@ -300,14 +308,20 @@ fn untrusted_item_to_current(
     let mut added_out = Vec::new();
     let mut added_count = 0;
     for _ in 0..added {
-        let id = component_id_to_current(read, version)?;
+        let id = component_to_current(read, version)?;
         let len = read.get_var_int().ok()?;
-        let (data, rest) = read.split_at_checked(usize::try_from(len.0).ok()?)?;
+        let (mut data, rest) = read.split_at_checked(usize::try_from(len.0).ok()?)?;
         *read = rest;
         if let Some(id) = id {
-            added_out.write_var_int(&id).ok()?;
-            added_out.write_var_int(&len).ok()?;
-            added_out.extend_from_slice(data);
+            let mut payload = Vec::new();
+            component_payload_to_current(id, &mut data, version, &mut payload)?;
+            added_out
+                .write_var_int(&VarInt(i32::from(id.to_id())))
+                .ok()?;
+            added_out
+                .write_var_int(&VarInt(payload.len() as i32))
+                .ok()?;
+            added_out.extend_from_slice(&payload);
             added_count += 1;
         }
     }
@@ -316,6 +330,95 @@ fn untrusted_item_to_current(
         removed_ids.extend(component_id_to_current(read, version)?);
     }
     out.write_var_int(&VarInt(added_count)).ok()?;
+    out.write_var_int(&VarInt(removed_ids.len() as i32)).ok()?;
+    out.extend_from_slice(&added_out);
+    for id in removed_ids {
+        out.write_var_int(&id).ok()?;
+    }
+    Some(())
+}
+
+/// A client component payload in the 26.3 format. Components holding items get them rewritten.
+// TODO: components whose format changed since 1.21.5 fail to read and drop the stack.
+fn component_payload_to_current(
+    id: DataComponent,
+    read: &mut &[u8],
+    version: JavaMinecraftVersion,
+    out: &mut Vec<u8>,
+) -> Option<()> {
+    match id {
+        DataComponent::BundleContents | DataComponent::ChargedProjectiles => {
+            let len = read.get_var_int().ok()?;
+            out.write_var_int(&len).ok()?;
+            for _ in 0..len.0 {
+                nested_item_to_current(read, version, out)?;
+            }
+        }
+        DataComponent::UseRemainder => nested_item_to_current(read, version, out)?,
+        DataComponent::Container => {
+            let len = read.get_var_int().ok()?;
+            out.write_var_int(&len).ok()?;
+            for _ in 0..len.0 {
+                let present = match NestedItemFormat::of(version) {
+                    NestedItemFormat::V1_20_5 => {
+                        // Empty slots are a 0 count, left unread for a stack
+                        let mut peek = *read;
+                        let empty = peek.get_var_int().ok()?.0 <= 0;
+                        if empty {
+                            *read = peek;
+                        }
+                        !empty
+                    }
+                    NestedItemFormat::V26_1 => read.get_bool().ok()?,
+                };
+                out.write_bool(present).ok()?;
+                if present {
+                    nested_item_to_current(read, version, out)?;
+                }
+            }
+        }
+        _ => {
+            let start = *read;
+            deserialize(id, read).ok()?;
+            out.extend_from_slice(&start[..start.len() - read.len()]);
+        }
+    }
+    Some(())
+}
+
+/// A stack inside a component as 26.3's `ItemStackTemplate`, its components without length.
+fn nested_item_to_current(
+    read: &mut &[u8],
+    version: JavaMinecraftVersion,
+    out: &mut Vec<u8>,
+) -> Option<()> {
+    let count = if NestedItemFormat::of(version) == NestedItemFormat::V1_20_5 {
+        Some(read.get_var_int().ok()?)
+    } else {
+        None
+    };
+    write_item_id_to_current(read, version, out)?;
+    let count = match count {
+        Some(count) => count,
+        None => read.get_var_int().ok()?,
+    };
+    out.write_var_int(&count).ok()?;
+    let added = read.get_var_int().ok()?.0;
+    let removed = read.get_var_int().ok()?.0;
+    let mut added_out = Vec::new();
+    for _ in 0..added {
+        // Without a length, a component unknown to 26.3 cannot be skipped
+        let id = component_to_current(read, version)??;
+        added_out
+            .write_var_int(&VarInt(i32::from(id.to_id())))
+            .ok()?;
+        component_payload_to_current(id, read, version, &mut added_out)?;
+    }
+    let mut removed_ids = Vec::new();
+    for _ in 0..removed {
+        removed_ids.extend(component_id_to_current(read, version)?);
+    }
+    out.write_var_int(&VarInt(added)).ok()?;
     out.write_var_int(&VarInt(removed_ids.len() as i32)).ok()?;
     out.extend_from_slice(&added_out);
     for id in removed_ids {
@@ -499,6 +602,49 @@ mod tests {
             read.get_var_int().unwrap(),
             VarInt(i32::from(Item::DIRT.id))
         );
+    }
+
+    #[test]
+    fn creative_bundle_items_become_templates() {
+        use crate::remap::data_component_type_id_remap::remap_data_component_type_id_for_version;
+        let client_component = |id: DataComponent| {
+            remap_data_component_type_id_for_version(u32::from(id.to_id()), V1_21_11) as i32
+        };
+        let client_item = |item: &Item| i32::from(remap_item_id_for_version(item.id, V1_21_11));
+        let var_ints = |values: &[i32]| {
+            let mut out = Vec::new();
+            for &value in values {
+                out.write_var_int(&VarInt(value)).unwrap();
+            }
+            out
+        };
+
+        // One dirt as count, id, no components
+        let client_payload = var_ints(&[1, 2, client_item(&Item::DIRT), 0, 0]);
+        let mut client = vec![0, 36];
+        client.extend(var_ints(&[
+            1,
+            client_item(&Item::BUNDLE),
+            1,
+            0,
+            client_component(DataComponent::BundleContents),
+            client_payload.len() as i32,
+        ]));
+        client.extend(client_payload);
+
+        // The same dirt as id, count, no components
+        let payload = var_ints(&[1, i32::from(Item::DIRT.id), 2, 0, 0]);
+        let mut expected = vec![0, 36];
+        expected.extend(var_ints(&[
+            1,
+            i32::from(Item::BUNDLE.id),
+            1,
+            0,
+            i32::from(DataComponent::BundleContents.to_id()),
+            payload.len() as i32,
+        ]));
+        expected.extend(payload);
+        assert_eq!(creative_slot_to_current(&client, V1_21_11), Some(expected));
     }
 
     /// 26.3 untrusted stack: count, id, no components.
