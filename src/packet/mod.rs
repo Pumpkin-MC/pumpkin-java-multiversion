@@ -1,7 +1,5 @@
 use pumpkin_util::version::JavaMinecraftVersion;
 
-pub mod legacy;
-pub mod mappings;
 pub mod translator;
 
 /// Returns whether a given Java edition version is supported by this multiversion plugin.

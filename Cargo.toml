@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pumpkin-plugin-api = { path = "../Pumpkin/crates/pumpkin-plugin-api", version = "0.2" }
-pumpkin-protocol = { path = "../Pumpkin/crates/pumpkin-protocol", version = "0.2" }
+pumpkin-protocol = { path = "../Pumpkin/crates/pumpkin-protocol", version = "0.2", features = ["java-legacy"] }
 pumpkin-util = { path = "../Pumpkin/crates/pumpkin-util", version = "0.2" }
 pumpkin-nbt = { path = "../Pumpkin/crates/pumpkin-nbt", version = "0.2" }
 pumpkin-data = { path = "../Pumpkin/crates/pumpkin-data", version = "0.2" }
@@ -22,7 +22,12 @@ bytes = "1.10"
 flate2 = "1.0"
 uuid = { version = "1.26", default-features = false, features = ["js"] }
 getrandom = { version = "0.4", features = ["wasm_js"] }
-phf = { version = "0.11", features = ["macros"] }
+phf = { version = "0.14.0", features = ["macros"] }
 
-[target.'cfg(not(target_family = "wasm"))'.dependencies]
-pumpkin-world = { path = "../Pumpkin/crates/pumpkin-world", version = "0.2" }
+[build-dependencies]
+pumpkin-nbt = { path = "../Pumpkin/crates/pumpkin-nbt", version = "0.2" }
+serde_json = "1.0"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "blocking", "json", "http2"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2"] }
+
