@@ -72,7 +72,14 @@ pub(crate) fn reencode_current<'a, P: ServerPacket<'a> + LegacyWrite>(
     mut payload: &'a [u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let packet = P::read(&mut payload).ok()?;
+    legacy_bytes(&P::read(&mut payload).ok()?, version)
+}
+
+/// `packet` in `version`'s layout.
+pub(crate) fn legacy_bytes(
+    packet: &impl LegacyWrite,
+    version: JavaMinecraftVersion,
+) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     packet.write_legacy(&mut out, &version).ok()?;
     Some(out)

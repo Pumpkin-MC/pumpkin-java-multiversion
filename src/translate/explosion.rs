@@ -1,6 +1,5 @@
 //! Explosions: EXPLODE.
 
-use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     IdOr, SoundEvent, VarInt,
     java::client::play::CExplosion,
@@ -66,22 +65,22 @@ pub fn explode_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -
         })
     };
 
-    let mut out = Vec::new();
     if ExplosionFormat::of(version) == ExplosionFormat::Core {
         let particle_id = (&mut particle.as_slice()).get_var_int().ok()?;
-        CExplosion {
-            center,
-            radius,
-            block_count,
-            knockback,
-            particle: particle_id,
-            sound,
-            block_particles_pool_size: VarInt(0),
-        }
-        .write_legacy(&mut out, &version)
-        .ok()?;
-        return Some(out);
+        return super::legacy_bytes(
+            &CExplosion {
+                center,
+                radius,
+                block_count,
+                knockback,
+                particle: particle_id,
+                sound,
+                block_particles_pool_size: VarInt(0),
+            },
+            version,
+        );
     }
+    let mut out = Vec::new();
     for value in [center.x, center.y, center.z] {
         out.write_f64_be(value).ok()?;
     }

@@ -1,7 +1,8 @@
 //! Entity movement: MOVE_ENTITY_POS, MOVE_ENTITY_POS_ROT, MOVE_ENTITY_ROT, ENTITY_POSITION_SYNC,
 //! SET_ENTITY_MOTION, PLAYER_ROTATION, PLAYER_POSITION.
 
-use pumpkin_protocol::java::legacy::{LegacyPacket, LegacyWrite};
+use super::legacy_bytes;
+use pumpkin_protocol::java::legacy::LegacyPacket;
 use pumpkin_protocol::{
     codec::lp_vector_3d::LpVector3d,
     java::client::play::{
@@ -11,12 +12,6 @@ use pumpkin_protocol::{
     ser::NetworkReadExt,
 };
 use pumpkin_util::{math::vector3::Vector3, version::JavaMinecraftVersion};
-
-fn write(packet: &impl LegacyWrite, version: JavaMinecraftVersion) -> Option<Vec<u8>> {
-    let mut out = Vec::new();
-    packet.write_legacy(&mut out, &version).ok()?;
-    Some(out)
-}
 
 pub fn pos_from_current(payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
     super::reencode_current::<CUpdateEntityPos>(payload, version)
@@ -60,7 +55,7 @@ pub fn position_sync_from_current(
     );
     Some((
         CEntityPositionSync::legacy_id(version)?,
-        write(&packet, version)?,
+        legacy_bytes(&packet, version)?,
     ))
 }
 
@@ -72,7 +67,7 @@ pub fn entity_motion_from_current(
 ) -> Option<Vec<u8>> {
     let entity_id = payload.get_var_int().ok()?;
     let LpVector3d(velocity) = LpVector3d::read(&mut payload).ok()?;
-    write(&CEntityVelocity::new(entity_id, velocity), version)
+    legacy_bytes(&CEntityVelocity::new(entity_id, velocity), version)
 }
 
 /// PLAYER_ROTATION: each angle got a relative flag in 1.21.9.
@@ -89,7 +84,7 @@ pub fn player_rotation_from_current(
     if relative_yaw || relative_pitch {
         return None;
     }
-    write(&CPlayerRotation { yaw, pitch }, version)
+    legacy_bytes(&CPlayerRotation { yaw, pitch }, version)
 }
 
 /// PLAYER_POSITION: core's writer has every layout; before 1.21.2 the flags are a byte and
@@ -122,11 +117,11 @@ mod tests {
         packet: &impl LegacyWrite,
         translate: fn(&[u8], JavaMinecraftVersion) -> Option<Vec<u8>>,
     ) {
-        let current = write(packet, CURRENT_MC_VERSION).unwrap();
+        let current = legacy_bytes(packet, CURRENT_MC_VERSION).unwrap();
         for version in VERSIONS {
             assert_eq!(
                 translate(&current, version),
-                write(packet, version),
+                legacy_bytes(packet, version),
                 "{version:?}"
             );
         }
@@ -191,11 +186,11 @@ mod tests {
             10.0,
             true,
         );
-        let current = write(&packet, CURRENT_MC_VERSION).unwrap();
+        let current = legacy_bytes(&packet, CURRENT_MC_VERSION).unwrap();
         for version in VERSIONS {
             let expected = (
                 CEntityPositionSync::legacy_id(version).unwrap(),
-                write(&packet, version).unwrap(),
+                legacy_bytes(&packet, version).unwrap(),
             );
             assert_eq!(
                 position_sync_from_current(&current, version),

@@ -1,6 +1,5 @@
 //! Resource pack push (clientbound) and response (serverbound).
 
-use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     java::client::config::CConfigAddResourcePack,
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},
@@ -46,7 +45,5 @@ pub fn push_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> O
         None
     };
     let packet = CConfigAddResourcePack::new(&uuid, url, hash, forced, prompt_message);
-    let mut out = Vec::new();
-    packet.write_legacy(&mut out, &version).ok()?;
-    Some(out)
+    super::legacy_bytes(&packet, version)
 }

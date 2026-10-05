@@ -1,7 +1,6 @@
 //! Particles: id and options, LEVEL_PARTICLES.
 
 use pumpkin_data::particle::Particle;
-use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     VarInt,
     codec::particle::ParticleOptionsLayout,
@@ -179,20 +178,19 @@ pub fn level_particles_from_current(
 
     let mut particle = particle.as_slice();
     let particle_id = particle.get_var_int().ok()?;
-    let mut out = Vec::new();
-    CParticle::new(
-        force_spawn,
-        important,
-        position,
-        offset,
-        max_speed,
-        count,
-        particle_id,
-        particle,
+    super::legacy_bytes(
+        &CParticle::new(
+            force_spawn,
+            important,
+            position,
+            offset,
+            max_speed,
+            count,
+            particle_id,
+            particle,
+        ),
+        version,
     )
-    .write_legacy(&mut out, &version)
-    .ok()?;
-    Some(out)
 }
 
 #[cfg(test)]

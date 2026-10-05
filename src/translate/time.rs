@@ -1,6 +1,5 @@
 //! SET_TIME.
 
-use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     codec::var_long::VarLong, java::client::play::CUpdateTime, ser::NetworkReadExt,
 };
@@ -22,14 +21,13 @@ pub fn set_time_from_current(mut payload: &[u8], version: JavaMinecraftVersion) 
             ))
         })
         .ok()?;
-    let mut out = Vec::new();
-    CUpdateTime {
-        game_time,
-        clock_updates,
-    }
-    .write_legacy(&mut out, &version)
-    .ok()?;
-    Some(out)
+    super::legacy_bytes(
+        &CUpdateTime {
+            game_time,
+            clock_updates,
+        },
+        version,
+    )
 }
 
 #[cfg(test)]

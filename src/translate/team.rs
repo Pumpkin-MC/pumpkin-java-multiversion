@@ -1,6 +1,5 @@
 //! SET_PLAYER_TEAM.
 
-use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     java::client::play::{CSetPlayerTeam, TeamMethod, TeamParameters},
     ser::{NetworkReadExt, NetworkReadSliceExt},
@@ -99,9 +98,7 @@ pub fn set_player_team_from_current(
         parameters,
         players: players.into_boxed_slice(),
     };
-    let mut out = Vec::new();
-    packet.write_legacy(&mut out, &version).ok()?;
-    Some(out)
+    super::legacy_bytes(&packet, version)
 }
 
 #[cfg(test)]

@@ -1,6 +1,5 @@
 //! PLAYER_INFO_UPDATE.
 
-use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{
     Property,
     java::client::play::{CPlayerInfoUpdate, InitChat, Player, PlayerAction, PlayerInfoFlags},
@@ -173,11 +172,7 @@ pub fn player_info_update_from_current(
             actions,
         })
         .collect();
-    let mut out = Vec::new();
-    CPlayerInfoUpdate::new(bits, &players)
-        .write_legacy(&mut out, &version)
-        .ok()?;
-    Some(out)
+    super::legacy_bytes(&CPlayerInfoUpdate::new(bits, &players), version)
 }
 
 #[cfg(test)]

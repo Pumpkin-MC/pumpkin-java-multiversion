@@ -1,6 +1,6 @@
 //! Login state: HELLO, KEY and LOGIN_FINISHED.
 
-use pumpkin_protocol::java::legacy::{LegacyRead, LegacyWrite};
+use pumpkin_protocol::java::legacy::LegacyRead;
 use pumpkin_protocol::{
     ClientPacket, Property,
     java::{client::login::CLoginSuccess, server::login::SEncryptionResponse},
@@ -68,9 +68,7 @@ pub fn login_success_from_current(
     let properties = payload.get_list(Property::read).ok()?;
     let session_id = payload.get_uuid().ok()?;
     let packet = CLoginSuccess::new(&uuid, username, &properties, true, session_id);
-    let mut out = Vec::new();
-    packet.write_legacy(&mut out, &version).ok()?;
-    Some(out)
+    super::legacy_bytes(&packet, version)
 }
 
 #[cfg(test)]

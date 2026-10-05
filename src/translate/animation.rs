@@ -1,6 +1,6 @@
 //! Entity animations: ANIMATE and SWING_ANIMATION.
 
-use pumpkin_protocol::java::legacy::{LegacyPacket, LegacyWrite};
+use pumpkin_protocol::java::legacy::LegacyPacket;
 use pumpkin_protocol::{
     VarInt,
     java::client::play::CSwingArm,
@@ -30,9 +30,8 @@ pub fn swing_from_current(
 ) -> Option<(i32, Vec<u8>)> {
     let entity_id = payload.get_var_int().ok()?;
     let off_hand = payload.get_var_int().ok()? != VarInt(0);
-    let mut out = Vec::new();
-    CSwingArm::new(entity_id, off_hand)
-        .write_legacy(&mut out, &version)
-        .ok()?;
-    Some((CSwingArm::legacy_id(version)?, out))
+    Some((
+        CSwingArm::legacy_id(version)?,
+        super::legacy_bytes(&CSwingArm::new(entity_id, off_hand), version)?,
+    ))
 }

@@ -1,6 +1,6 @@
 //! Sounds: SOUND, SOUND_ENTITY and STOP_SOUND.
 
-use pumpkin_protocol::java::legacy::LegacyWrite;
+use super::legacy_bytes;
 use pumpkin_protocol::{
     IdOr, SoundEvent, VarInt,
     java::client::play::{CEntitySoundEffect, CSoundEffect},
@@ -59,12 +59,6 @@ fn read_source(read: &mut &[u8], version: JavaMinecraftVersion) -> Option<VarInt
     )
 }
 
-fn write(packet: &impl LegacyWrite, version: JavaMinecraftVersion) -> Option<Vec<u8>> {
-    let mut out = Vec::new();
-    packet.write_legacy(&mut out, &version).ok()?;
-    Some(out)
-}
-
 /// SOUND.
 pub fn sound_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
     let packet = CSoundEffect {
@@ -79,7 +73,7 @@ pub fn sound_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> 
         pitch: payload.get_f32_be().ok()?,
         seed: payload.get_i64_be().ok()?,
     };
-    write(&packet, version)
+    legacy_bytes(&packet, version)
 }
 
 /// SOUND_ENTITY.
@@ -95,7 +89,7 @@ pub fn sound_entity_from_current(
         pitch: payload.get_f32_be().ok()?,
         seed: payload.get_i64_be().ok()?,
     };
-    write(&packet, version)
+    legacy_bytes(&packet, version)
 }
 
 /// STOP_SOUND: flags, then the source when bit 0 is set.
@@ -129,7 +123,7 @@ mod tests {
             0.5,
             7,
         );
-        let current = write(&packet, CURRENT_MC_VERSION).unwrap();
+        let current = legacy_bytes(&packet, CURRENT_MC_VERSION).unwrap();
         let version = JavaMinecraftVersion::V_1_21_11;
         let remapped = CSoundEffect {
             sound_event: IdOr::Id(remap_sound_id_for_version(500, version)),
@@ -137,7 +131,7 @@ mod tests {
         };
         assert_eq!(
             sound_from_current(&current, version),
-            write(&remapped, version)
+            legacy_bytes(&remapped, version)
         );
     }
 }

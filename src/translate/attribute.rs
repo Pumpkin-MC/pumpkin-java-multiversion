@@ -1,7 +1,6 @@
 //! Entity attributes: UPDATE_ATTRIBUTES.
 
 use pumpkin_data::attributes::Attributes;
-use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_protocol::{ServerPacket, VarInt, java::client::play::CUpdateAttributes};
 use pumpkin_util::version::JavaMinecraftVersion;
 
@@ -38,9 +37,7 @@ pub fn update_attributes_from_current(
             true
         })
     });
-    let mut out = Vec::new();
-    packet.write_legacy(&mut out, &version).ok()?;
-    Some(out)
+    super::legacy_bytes(&packet, version)
 }
 
 #[cfg(test)]

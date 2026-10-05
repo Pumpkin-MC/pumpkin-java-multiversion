@@ -1,7 +1,7 @@
 //! Player spawn info: play LOGIN, RESPAWN and SET_DEFAULT_SPAWN_POSITION.
 
 use pumpkin_data::entity::EntityType;
-use pumpkin_protocol::java::legacy::{LegacyWrite, LegacyWriteWith};
+use pumpkin_protocol::java::legacy::LegacyWriteWith;
 use pumpkin_protocol::{
     ServerPacket,
     java::client::play::{CLogin, CPlayerSpawnPosition, CRespawn, PlayerSpawnData},
@@ -73,11 +73,10 @@ pub fn spawn_position_from_current(
     let location = payload.get_block_pos().ok()?;
     let yaw = payload.get_f32_be().ok()?;
     let pitch = payload.get_f32_be().ok()?;
-    let mut out = Vec::new();
-    CPlayerSpawnPosition::new(location, yaw, pitch, dimension)
-        .write_legacy(&mut out, &version)
-        .ok()?;
-    Some(out)
+    super::legacy_bytes(
+        &CPlayerSpawnPosition::new(location, yaw, pitch, dimension),
+        version,
+    )
 }
 
 #[cfg(test)]
