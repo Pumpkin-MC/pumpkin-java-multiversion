@@ -1,6 +1,9 @@
 //! Per-version synced registries from `assets/datapacks`, as network NBT, and block id remaps
 //! from the ViaBackwards mappings.
 
+#[path = "build/vanilla.rs"]
+mod vanilla;
+
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::fs;
@@ -19,8 +22,10 @@ const CURRENT: &str = "26_3";
 fn datapack_dir(folder: &str) -> PathBuf {
     if folder == CURRENT {
         Path::new(CORE_ASSETS).join("datapack")
+    } else if vanilla::JAR_SOURCES.iter().any(|(f, _)| *f == folder) {
+        Path::new(vanilla::CACHE_DIR).join(folder)
     } else {
-        Path::new("assets/datapacks").join(folder)
+        Path::new(vanilla::BUILTIN_DIR).join(folder)
     }
 }
 
@@ -730,7 +735,9 @@ fn missing_tag_tables() -> String {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=assets/datapacks");
+    println!("cargo:rerun-if-changed=build/vanilla.rs");
+    println!("cargo:rerun-if-changed={}", vanilla::CACHE_DIR);
+    println!("cargo:rerun-if-changed={}", vanilla::BUILTIN_DIR);
     println!("cargo:rerun-if-changed=assets/tracked_data");
     println!("cargo:rerun-if-changed=assets/meta_data_type");
     assert!(
@@ -739,6 +746,13 @@ fn main() {
     );
     for path in ["datapack", "tracked_data.json", "meta_data_type.json"] {
         println!("cargo:rerun-if-changed={CORE_ASSETS}/{path}");
+    }
+    if let Err(error) = vanilla::ensure_datapacks(SYNCED_REGISTRIES) {
+        panic!(
+            "Failed to extract the older versions' data from Mojang's server jars: {error}\n\
+             Check the internet connection, or set PUMPKIN_MINECRAFT_JAR_DIR to a directory of \
+             <version>.jar server jars."
+        );
     }
 
     let mut blobs: Vec<Vec<u8>> = Vec::new();
