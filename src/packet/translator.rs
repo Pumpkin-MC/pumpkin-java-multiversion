@@ -12,6 +12,7 @@ use crate::remap::{
 };
 
 /// Converts the WIT-generated `JavaMinecraftVersion` into the internal `pumpkin_util` version.
+#[cfg(feature = "plugin")]
 #[must_use]
 pub const fn from_wasm_java_version(
     version: pumpkin_plugin_api::wit::pumpkin::plugin::player::JavaMinecraftVersion,

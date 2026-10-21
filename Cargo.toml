@@ -9,8 +9,15 @@ license = "MIT OR Apache-2.0"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["plugin", "chunk"]
+# The Pumpkin WASM plugin; without it the crate is just the translator, for use as a library
+plugin = ["dep:pumpkin-plugin-api"]
+# Chunk format conversion for older clients, outside WASM
+chunk = ["dep:pumpkin-world"]
+
 [dependencies]
-pumpkin-plugin-api = { git = "https://github.com/Pumpkin-MC/Pumpkin", branch = "master", version = "0.2" }
+pumpkin-plugin-api = { git = "https://github.com/Pumpkin-MC/Pumpkin", branch = "master", version = "0.2", optional = true }
 pumpkin-protocol = { git = "https://github.com/Pumpkin-MC/Pumpkin", branch = "master", version = "0.2" }
 pumpkin-util = { git = "https://github.com/Pumpkin-MC/Pumpkin", branch = "master", version = "0.2" }
 pumpkin-nbt = { git = "https://github.com/Pumpkin-MC/Pumpkin", branch = "master", version = "0.2" }
@@ -25,4 +32,4 @@ getrandom = { version = "0.4", features = ["wasm_js"] }
 phf = { version = "0.11", features = ["macros"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-pumpkin-world = { git = "https://github.com/Pumpkin-MC/Pumpkin", branch = "master", version = "0.2" }
+pumpkin-world = { git = "https://github.com/Pumpkin-MC/Pumpkin", branch = "master", version = "0.2", optional = true }

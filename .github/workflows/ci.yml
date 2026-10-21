@@ -56,6 +56,9 @@ jobs:
       - name: Run Clippy (Host target)
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Run Clippy (library only)
+        run: cargo clippy --no-default-features -- -D warnings
+
   build:
     name: Compile & Build
     runs-on: ubuntu-latest
