@@ -1,4 +1,5 @@
 use pumpkin_data::entity::EntityType;
+use pumpkin_plugin_api::events::packet::ConnectionState;
 use pumpkin_protocol::{
     ClientPacket, MultiVersionJavaPacket, VarInt, java::client::play::CSpawnEntity,
 };
@@ -404,33 +405,46 @@ impl PacketTranslator {
     pub fn translate_serverbound_packet_id(
         packet_id: i32,
         version: JavaMinecraftVersion,
+        state: ConnectionState,
     ) -> Option<i32> {
         if version == JavaMinecraftVersion::V_26_3 {
             return Some(packet_id);
         }
-        for &packet in SERVERBOUND_PLAY {
-            if packet.to_id(version) == packet_id && packet.v26_3 != -1 {
-                return Some(packet.v26_3);
+        match state {
+            ConnectionState::Play => {
+                for &packet in SERVERBOUND_PLAY {
+                    if packet.to_id(version) == packet_id && packet.v26_3 != -1 {
+                        return Some(packet.v26_3);
+                    }
+                }
             }
-        }
-        for &packet in SERVERBOUND_CONFIG {
-            if packet.to_id(version) == packet_id && packet.v26_3 != -1 {
-                return Some(packet.v26_3);
+            ConnectionState::Config => {
+                for &packet in SERVERBOUND_CONFIG {
+                    if packet.to_id(version) == packet_id && packet.v26_3 != -1 {
+                        return Some(packet.v26_3);
+                    }
+                }
             }
-        }
-        for &packet in SERVERBOUND_LOGIN {
-            if packet.to_id(version) == packet_id && packet.v26_3 != -1 {
-                return Some(packet.v26_3);
+            ConnectionState::Login => {
+                for &packet in SERVERBOUND_LOGIN {
+                    if packet.to_id(version) == packet_id && packet.v26_3 != -1 {
+                        return Some(packet.v26_3);
+                    }
+                }
             }
-        }
-        for &packet in SERVERBOUND_STATUS {
-            if packet.to_id(version) == packet_id && packet.v26_3 != -1 {
-                return Some(packet.v26_3);
+            ConnectionState::Status => {
+                for &packet in SERVERBOUND_STATUS {
+                    if packet.to_id(version) == packet_id && packet.v26_3 != -1 {
+                        return Some(packet.v26_3);
+                    }
+                }
             }
-        }
-        for &packet in SERVERBOUND_HANDSHAKE {
-            if packet.to_id(version) == packet_id && packet.v26_3 != -1 {
-                return Some(packet.v26_3);
+            ConnectionState::Handshake => {
+                for &packet in SERVERBOUND_HANDSHAKE {
+                    if packet.to_id(version) == packet_id && packet.v26_3 != -1 {
+                        return Some(packet.v26_3);
+                    }
+                }
             }
         }
         None
@@ -441,41 +455,53 @@ impl PacketTranslator {
     pub fn translate_clientbound_packet_id(
         packet_id_26_3: i32,
         version: JavaMinecraftVersion,
+        state: ConnectionState,
     ) -> Option<i32> {
         if version == JavaMinecraftVersion::V_26_3 {
             return Some(packet_id_26_3);
         }
-        for &packet in CLIENTBOUND_PLAY {
-            if packet.v26_3 == packet_id_26_3 {
-                let client_id = packet.to_id(version);
-                if client_id != -1 {
-                    return Some(client_id);
+        match state {
+            ConnectionState::Play => {
+                for &packet in CLIENTBOUND_PLAY {
+                    if packet.v26_3 == packet_id_26_3 {
+                        let client_id = packet.to_id(version);
+                        if client_id != -1 {
+                            return Some(client_id);
+                        }
+                    }
                 }
             }
-        }
-        for &packet in CLIENTBOUND_CONFIG {
-            if packet.v26_3 == packet_id_26_3 {
-                let client_id = packet.to_id(version);
-                if client_id != -1 {
-                    return Some(client_id);
+            ConnectionState::Config => {
+                for &packet in CLIENTBOUND_CONFIG {
+                    if packet.v26_3 == packet_id_26_3 {
+                        let client_id = packet.to_id(version);
+                        if client_id != -1 {
+                            return Some(client_id);
+                        }
+                    }
                 }
             }
-        }
-        for &packet in CLIENTBOUND_LOGIN {
-            if packet.v26_3 == packet_id_26_3 {
-                let client_id = packet.to_id(version);
-                if client_id != -1 {
-                    return Some(client_id);
+            ConnectionState::Login => {
+                for &packet in CLIENTBOUND_LOGIN {
+                    if packet.v26_3 == packet_id_26_3 {
+                        let client_id = packet.to_id(version);
+                        if client_id != -1 {
+                            return Some(client_id);
+                        }
+                    }
                 }
             }
-        }
-        for &packet in CLIENTBOUND_STATUS {
-            if packet.v26_3 == packet_id_26_3 {
-                let client_id = packet.to_id(version);
-                if client_id != -1 {
-                    return Some(client_id);
+            ConnectionState::Status => {
+                for &packet in CLIENTBOUND_STATUS {
+                    if packet.v26_3 == packet_id_26_3 {
+                        let client_id = packet.to_id(version);
+                        if client_id != -1 {
+                            return Some(client_id);
+                        }
+                    }
                 }
             }
+            ConnectionState::Handshake => {}
         }
         None
     }
@@ -548,14 +574,16 @@ impl PacketTranslator {
         packet_id: i32,
         raw_payload: &[u8],
         version: JavaMinecraftVersion,
+        state: ConnectionState,
     ) -> Option<(i32, Vec<u8>)> {
         if version == JavaMinecraftVersion::V_26_3 {
             return None;
         }
 
-        let new_id = Self::translate_serverbound_packet_id(packet_id, version)?;
-        let translated_payload = Self::translate_serverbound_payload(new_id, raw_payload, version)
-            .unwrap_or_else(|| raw_payload.to_vec());
+        let new_id = Self::translate_serverbound_packet_id(packet_id, version, state)?;
+        let translated_payload =
+            Self::translate_serverbound_payload(new_id, raw_payload, version, state)
+                .unwrap_or_else(|| raw_payload.to_vec());
         Some((new_id, translated_payload))
     }
 
@@ -563,8 +591,57 @@ impl PacketTranslator {
         new_id: i32,
         mut payload: &[u8],
         version: JavaMinecraftVersion,
+        state: ConnectionState,
     ) -> Option<Vec<u8>> {
         use pumpkin_protocol::ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt};
+
+        if state == ConnectionState::Login {
+            // HELLO / LOGIN_START (< 1.20.2 missing UUID)
+            if new_id == mappings::serverbound::login::HELLO.v26_3
+                && version < JavaMinecraftVersion::V_1_20_2
+            {
+                let name = payload.get_str_borrowed().ok()?;
+                let client_uuid = if version >= JavaMinecraftVersion::V_1_19_3 {
+                    if let Ok(true) = payload.get_bool() {
+                        payload.get_uuid().ok()
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let player_uuid = client_uuid.unwrap_or_else(|| {
+                    uuid::Uuid::new_v3(
+                        &uuid::Uuid::nil(),
+                        format!("OfflinePlayer:{name}").as_bytes(),
+                    )
+                });
+                let mut out = Vec::new();
+                let _ = out.write_string(name);
+                let _ = out.write_uuid(&player_uuid);
+                return Some(out);
+            }
+
+            // KEY / ENCRYPTION_RESPONSE
+            if new_id == mappings::serverbound::login::KEY.v26_3
+                && version != JavaMinecraftVersion::V_26_3
+            {
+                use pumpkin_protocol::{ClientPacket, ServerPacket};
+                if let Ok(resp) = pumpkin_protocol::java::server::login::SEncryptionResponse::read(
+                    &mut payload,
+                    &version,
+                ) {
+                    let mut out = Vec::new();
+                    if resp
+                        .write_packet_data(&mut out, &JavaMinecraftVersion::V_26_3)
+                        .is_ok()
+                    {
+                        return Some(out);
+                    }
+                }
+            }
+            return None;
+        }
 
         // 1. PUNCH / SWING (26.3 punch has 0 bytes)
         if new_id == mappings::serverbound::play::PUNCH.v26_3 {
@@ -703,21 +780,6 @@ impl PacketTranslator {
             return Some(out);
         }
 
-        // 8. HELLO / LOGIN_START (< 1.20.2 missing UUID)
-        if new_id == mappings::serverbound::login::HELLO.v26_3
-            && version < JavaMinecraftVersion::V_1_20_2
-        {
-            let name = payload.get_str_borrowed().ok()?;
-            let offline_uuid = uuid::Uuid::new_v3(
-                &uuid::Uuid::nil(),
-                format!("OfflinePlayer:{name}").as_bytes(),
-            );
-            let mut out = Vec::new();
-            let _ = out.write_string(name);
-            let _ = out.write_uuid(&offline_uuid);
-            return Some(out);
-        }
-
         // 9. CHANGE_DIFFICULTY (< 1.21.6 was u8, now VarInt)
         if new_id == mappings::serverbound::play::CHANGE_DIFFICULTY.v26_3
             && version < JavaMinecraftVersion::V_1_21_6
@@ -802,13 +864,72 @@ impl PacketTranslator {
         packet_id: i32,
         raw_payload: &[u8],
         version: JavaMinecraftVersion,
+        state: ConnectionState,
     ) -> Option<(i32, Vec<u8>)> {
         if version == JavaMinecraftVersion::V_26_3 {
             return None;
         }
 
-        // Check for CSpawnEntity (ADD_ENTITY) in 26.3
-        if packet_id == mappings::clientbound::play::ADD_ENTITY.v26_3
+        use pumpkin_protocol::ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt};
+
+        // 1. CLoginSuccess (LOGIN_FINISHED / GAME_PROFILE) in Login state
+        if state == ConnectionState::Login
+            && packet_id == mappings::clientbound::login::LOGIN_FINISHED.v26_3
+        {
+            let mut read_slice = raw_payload;
+            if let (Ok(uuid), Ok(username), Ok(properties)) = (
+                read_slice.get_uuid(),
+                read_slice.get_str_borrowed(),
+                read_slice.get_list(pumpkin_protocol::Property::read),
+            ) {
+                let session_id = read_slice.get_uuid().unwrap_or(uuid::Uuid::nil());
+                let mut out = Vec::new();
+                if version < JavaMinecraftVersion::V_1_16 {
+                    let _ = out.write_string(&uuid.to_string());
+                } else {
+                    let _ = out.write_uuid(&uuid);
+                }
+                let _ = out.write_string(username);
+                if version >= JavaMinecraftVersion::V_1_19 {
+                    let _ = out.write_list(&properties, |w, p| p.write(w));
+                }
+                if version >= JavaMinecraftVersion::V_26_2 {
+                    let _ = out.write_uuid(&session_id);
+                }
+                if version >= JavaMinecraftVersion::V_1_20_5
+                    && version < JavaMinecraftVersion::V_1_21_2
+                {
+                    let _ = out.write_bool(false);
+                }
+                let target_id = if version >= JavaMinecraftVersion::V_1_21_2 {
+                    mappings::clientbound::login::LOGIN_FINISHED.to_id(version)
+                } else {
+                    mappings::clientbound::login::GAME_PROFILE.to_id(version)
+                };
+                return Some((target_id, out));
+            }
+        }
+
+        // 2. CEncryptionRequest (HELLO) in Login state
+        if state == ConnectionState::Login && packet_id == mappings::clientbound::login::HELLO.v26_3
+        {
+            use pumpkin_protocol::{ClientPacket, ServerPacket};
+            let mut read_slice = raw_payload;
+            if let Ok(req) = pumpkin_protocol::java::client::login::CEncryptionRequest::read(
+                &mut read_slice,
+                &JavaMinecraftVersion::V_26_3,
+            ) {
+                let mut out = Vec::new();
+                if req.write_packet_data(&mut out, &version).is_ok() {
+                    let target_id = mappings::clientbound::login::HELLO.to_id(version);
+                    return Some((target_id, out));
+                }
+            }
+        }
+
+        // 3. Check for CSpawnEntity (ADD_ENTITY) in Play state
+        if state == ConnectionState::Play
+            && packet_id == mappings::clientbound::play::ADD_ENTITY.v26_3
             && let Ok(spawn_entity) =
                 CSpawnEntity::read_packet_data(raw_payload, &JavaMinecraftVersion::V_26_3)
         {
@@ -900,7 +1021,7 @@ impl PacketTranslator {
         }
 
         // Generic packet ID translation
-        let client_id = Self::translate_clientbound_packet_id(packet_id, version)?;
+        let client_id = Self::translate_clientbound_packet_id(packet_id, version, state)?;
         Some((client_id, raw_payload.to_vec()))
     }
 }

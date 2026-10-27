@@ -8,9 +8,15 @@ use pumpkin_plugin_api::{
     Context, Plugin, PluginMetadata, Server,
     events::{
         EventHandler, EventPriority,
-        packet::{PacketReceivedEvent, PacketSentEvent},
+        packet::{
+            ConnectionPacketReceivedEvent, ConnectionPacketSentEvent, ConnectionState,
+            PacketReceivedEvent, PacketSentEvent,
+        },
     },
-    events_wit::{PacketReceivedEventData, PacketSentEventData},
+    events_wit::{
+        ConnectionPacketReceivedEventData, ConnectionPacketSentEventData, PacketReceivedEventData,
+        PacketSentEventData,
+    },
     register_plugin,
 };
 
@@ -40,6 +46,15 @@ impl Plugin for MultiVersionPlugin {
     fn on_load(&self, context: Context) -> Result<(), String> {
         tracing::info!("Loading Pumpkin Java Multi-Version Plugin...");
 
+        // Register connection packet event handlers for pre-play (Handshake, Login, Config)
+        context.register_event_handler(
+            ConnectionPacketReceivedHandler,
+            EventPriority::Highest,
+            true,
+        )?;
+
+        context.register_event_handler(ConnectionPacketSentHandler, EventPriority::Lowest, true)?;
+
         // Register packet event handlers with High priority to translate before/after game logic
         context.register_event_handler(PacketReceivedHandler, EventPriority::Highest, true)?;
 
@@ -52,6 +67,52 @@ impl Plugin for MultiVersionPlugin {
     fn on_unload(&self, _context: Context) -> Result<(), String> {
         tracing::info!("Unloading Pumpkin Java Multi-Version Plugin");
         Ok(())
+    }
+}
+
+/// Handles incoming connection packets (Handshake, Status, Login, Config) from clients.
+struct ConnectionPacketReceivedHandler;
+
+impl EventHandler<ConnectionPacketReceivedEvent> for ConnectionPacketReceivedHandler {
+    fn handle(
+        &self,
+        _server: Server,
+        mut event: ConnectionPacketReceivedEventData,
+    ) -> ConnectionPacketReceivedEventData {
+        let version = from_wasm_java_version(event.version);
+        if let Some((new_id, new_payload)) = PacketTranslator::translate_incoming_packet(
+            event.packet_id,
+            &event.raw_payload,
+            version,
+            event.state,
+        ) {
+            event.packet_id = new_id;
+            event.raw_payload = new_payload;
+        }
+        event
+    }
+}
+
+/// Handles outgoing connection packets (Status, Login, Config) to clients.
+struct ConnectionPacketSentHandler;
+
+impl EventHandler<ConnectionPacketSentEvent> for ConnectionPacketSentHandler {
+    fn handle(
+        &self,
+        _server: Server,
+        mut event: ConnectionPacketSentEventData,
+    ) -> ConnectionPacketSentEventData {
+        let version = from_wasm_java_version(event.version);
+        if let Some((new_id, new_payload)) = PacketTranslator::translate_outgoing_packet(
+            event.packet_id,
+            &event.raw_payload,
+            version,
+            event.state,
+        ) {
+            event.packet_id = new_id;
+            event.raw_payload = new_payload;
+        }
+        event
     }
 }
 
@@ -70,6 +131,7 @@ impl EventHandler<PacketReceivedEvent> for PacketReceivedHandler {
                 event.packet_id,
                 &event.raw_payload,
                 version,
+                ConnectionState::Play,
             ) {
                 event.packet_id = new_id;
                 event.raw_payload = new_payload;
@@ -90,6 +152,7 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
                 event.packet_id,
                 &event.raw_payload,
                 version,
+                ConnectionState::Play,
             ) {
                 event.packet_id = new_id;
                 event.raw_payload = new_payload;
