@@ -355,7 +355,7 @@ mod tests {
         let nether = read_named(
             dimension_type_nbt(JavaMinecraftVersion::V_1_16_2, "minecraft:the_nether").unwrap(),
         );
-        assert_eq!(nether.get_int("ultrawarm"), Some(1));
+        assert_eq!(nether.get_bool("ultrawarm"), Some(true));
         let custom = dimension_type_nbt(JavaMinecraftVersion::V_1_17, "plugin:custom");
         assert_eq!(
             custom,

@@ -22,10 +22,8 @@ const CURRENT: &str = "26_3";
 fn datapack_dir(folder: &str) -> PathBuf {
     if folder == CURRENT {
         Path::new(CORE_ASSETS).join("datapack")
-    } else if vanilla::JAR_SOURCES.iter().any(|(f, _)| *f == folder) {
-        Path::new(vanilla::CACHE_DIR).join(folder)
     } else {
-        Path::new(vanilla::BUILTIN_DIR).join(folder)
+        Path::new(vanilla::CACHE_DIR).join(folder)
     }
 }
 
@@ -737,7 +735,6 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=build/vanilla.rs");
     println!("cargo:rerun-if-changed={}", vanilla::CACHE_DIR);
-    println!("cargo:rerun-if-changed={}", vanilla::BUILTIN_DIR);
     println!("cargo:rerun-if-changed=assets/tracked_data");
     println!("cargo:rerun-if-changed=assets/meta_data_type");
     assert!(
@@ -751,7 +748,8 @@ fn main() {
         panic!(
             "Failed to extract the older versions' data from Mojang's server jars: {error}\n\
              Check the internet connection, or set PUMPKIN_MINECRAFT_JAR_DIR to a directory of \
-             <version>.jar server jars."
+             <version>.jar server jars. Versions before 1.19.4 run their data generator: \
+             Java 17+ via PUMPKIN_JAVA, JAVA_HOME or PATH."
         );
     }
 

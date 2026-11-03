@@ -44,6 +44,13 @@ jobs:
       - name: Clone Pumpkin dependency
         run: git clone --depth 1 https://github.com/Pumpkin-MC/Pumpkin.git ../Pumpkin
 
+      # build.rs runs the data generator of server jars before 1.19.4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -68,6 +75,13 @@ jobs:
 
       - name: Clone Pumpkin dependency
         run: git clone --depth 1 https://github.com/Pumpkin-MC/Pumpkin.git ../Pumpkin
+
+      # build.rs runs the data generator of server jars before 1.19.4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -95,6 +109,13 @@ jobs:
 
       - name: Clone Pumpkin dependency
         run: git clone --depth 1 https://github.com/Pumpkin-MC/Pumpkin.git ../Pumpkin
+
+      # build.rs runs the data generator of server jars before 1.19.4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
