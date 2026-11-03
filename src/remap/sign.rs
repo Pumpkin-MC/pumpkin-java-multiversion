@@ -35,9 +35,10 @@ fn remap_sign_face(face: &mut NbtCompound, version: JavaMinecraftVersion) -> boo
 fn line_to_legacy_json(tag: &NbtTag, version: JavaMinecraftVersion) -> NbtTag {
     NbtTag::String(match tag {
         NbtTag::String(raw) => plain_to_json_string(raw),
-        other => TextComponent::from_nbt(other)
-            .to_json_for_version(&version)
-            .into_boxed_str(),
+        other => {
+            pumpkin_protocol::java::legacy::text::to_json(&TextComponent::from_nbt(other), &version)
+                .into_boxed_str()
+        }
     })
 }
 
