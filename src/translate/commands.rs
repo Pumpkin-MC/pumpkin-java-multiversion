@@ -8,6 +8,7 @@ use pumpkin_protocol::{
 use pumpkin_util::{identifier::Identifier, version::JavaMinecraftVersion};
 
 use crate::remap::argument_type_id_remap::remap_argument_type_id_for_version;
+use crate::translate::registry::client_lacks_registry;
 
 const FLAG_ARGUMENT: u8 = 2;
 const FLAG_HAS_REDIRECT: u8 = 8;
@@ -39,7 +40,10 @@ enum Properties {
     Byte,
     /// Time minimum.
     Int,
-    String,
+    /// Registry id. `lookup`: the client resolves the registry when building the node.
+    Registry {
+        lookup: bool,
+    },
 }
 
 fn properties(id: u32) -> Properties {
@@ -83,19 +87,21 @@ fn properties(id: u32) -> Properties {
             identifier: resource(),
         })
         || id
-            == of(ArgumentType::ResourceOrTagKey {
-                identifier: resource(),
-            })
-        || id
             == of(ArgumentType::Resource {
                 identifier: resource(),
             })
+    {
+        Properties::Registry { lookup: true }
+    } else if id
+        == of(ArgumentType::ResourceOrTagKey {
+            identifier: resource(),
+        })
         || id
             == of(ArgumentType::ResourceKey {
                 identifier: resource(),
             })
     {
-        Properties::String
+        Properties::Registry { lookup: false }
     } else {
         Properties::None
     }
@@ -129,13 +135,13 @@ fn copy_properties(
                 target.write_i32_be(min).ok()?;
             }
         }
-        Properties::String => target.write_string(read.get_str_borrowed().ok()?).ok()?,
+        Properties::Registry { .. } => target.write_string(read.get_str_borrowed().ok()?).ok()?,
     }
     Some(())
 }
 
 /// COMMANDS: argument type ids as the client's. Types the client lacks become quotable strings
-/// (ViaVersion `CommandRewriter`).
+/// (ViaVersion `CommandRewriter`), as do registry lookups of registries the client lacks.
 pub fn commands_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
     let format = CommandsFormat::of(version);
     if format == CommandsFormat::Identifiers {
@@ -161,10 +167,17 @@ pub fn commands_from_current(mut payload: &[u8], version: JavaMinecraftVersion) 
         }
         if flags & 3 == FLAG_ARGUMENT {
             let id = payload.get_var_int().ok()?.0 as u32;
-            let client_id = remap_argument_type_id_for_version(id, version);
+            let properties = properties(id);
+            let mut client_id = remap_argument_type_id_for_version(id, version);
+            if let Properties::Registry { lookup: true } = properties {
+                let registry = (&mut &*payload).get_str_borrowed().ok()?;
+                if client_lacks_registry(registry, version) {
+                    client_id = STRING_ID;
+                }
+            }
             let replaced = client_id == STRING_ID && id != STRING_ID;
             out.write_var_int(&VarInt(client_id as i32)).ok()?;
-            copy_properties(&mut payload, &mut out, &properties(id), !replaced, format)?;
+            copy_properties(&mut payload, &mut out, &properties, !replaced, format)?;
             if replaced {
                 out.write_var_int(&VarInt(StringProtoArgBehavior::QuotablePhrase as i32))
                     .ok()?;
@@ -233,5 +246,57 @@ mod tests {
             .write_legacy(&mut expected, &version)
             .unwrap();
         assert_eq!(commands_from_current(&current, version), Some(expected));
+    }
+
+    fn resource_tree(registry: &'static str) -> Vec<u8> {
+        let nodes = vec![
+            ProtoNode {
+                children: vec![VarInt(1)].into_boxed_slice(),
+                node_type: ProtoNodeType::Root,
+            },
+            ProtoNode {
+                children: Box::new([]),
+                node_type: ProtoNodeType::Argument {
+                    name: "id",
+                    is_executable: true,
+                    redirect_target: None,
+                    parser: ArgumentType::Resource {
+                        identifier: Identifier::vanilla_static(registry),
+                    },
+                    override_suggestion_type: None,
+                    restricted: false,
+                },
+            },
+        ]
+        .into_boxed_slice();
+        let mut current = Vec::new();
+        CCommands::new(nodes, VarInt(0))
+            .write_packet_data(&mut current)
+            .unwrap();
+        current
+    }
+
+    fn sends_registry(registry: &'static str, version: JavaMinecraftVersion) -> bool {
+        let out = commands_from_current(&resource_tree(registry), version).unwrap();
+        let id = format!("minecraft:{registry}");
+        out.windows(id.len()).any(|w| w == id.as_bytes())
+    }
+
+    #[test]
+    fn registry_lookups_the_client_lacks_become_strings() {
+        assert!(!sends_registry(
+            "world_clock",
+            JavaMinecraftVersion::V_1_21_11
+        ));
+        assert!(sends_registry("world_clock", JavaMinecraftVersion::V_26_1));
+        assert!(!sends_registry(
+            "damage_type",
+            JavaMinecraftVersion::V_1_19_3
+        ));
+        assert!(sends_registry(
+            "damage_type",
+            JavaMinecraftVersion::V_1_19_4
+        ));
+        assert!(sends_registry("mob_effect", JavaMinecraftVersion::V_1_19_3));
     }
 }

@@ -150,6 +150,14 @@ pub fn current_names(registry: &str) -> Option<&'static [&'static str]> {
         .map(|(_, names)| *names)
 }
 
+/// Whether `registry`, synced in 26.3, is missing from the client. Before 1.16 nothing is synced.
+#[must_use]
+pub fn client_lacks_registry(registry: &str, version: JavaMinecraftVersion) -> bool {
+    let registry = registry.strip_prefix("minecraft:").unwrap_or(registry);
+    current_names(registry).is_some()
+        && names_for(version).is_some_and(|names| !names.iter().any(|(id, _)| *id == registry))
+}
+
 /// 26.3 registry ids mapped to the client's by entry name.
 pub struct IdRemap {
     /// Indexed by the 26.3 id.
