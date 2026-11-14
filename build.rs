@@ -12,19 +12,15 @@ use std::path::{Path, PathBuf};
 use pumpkin_nbt::{Nbt, compound::NbtCompound, tag::NbtTag};
 use serde_json::Value;
 
-/// Core's assets, the source of the current version's data; the plugin is checked out next
-/// to Pumpkin, as the path dependencies in `Cargo.toml` expect.
+/// Core's assets, the source of the current version's entity metadata; the plugin is checked out
+/// next to Pumpkin, as the path dependencies in `Cargo.toml` expect.
 const CORE_ASSETS: &str = "../Pumpkin/assets";
 
-/// The current version's folder name, which lives in [`CORE_ASSETS`] instead of `assets/`.
+/// The current version's folder name.
 const CURRENT: &str = "26_3";
 
 fn datapack_dir(folder: &str) -> PathBuf {
-    if folder == CURRENT {
-        Path::new(CORE_ASSETS).join("datapack")
-    } else {
-        Path::new(vanilla::CACHE_DIR).join(folder)
-    }
+    Path::new(vanilla::CACHE_DIR).join(folder)
 }
 
 fn tracked_data_path(folder: &str) -> String {
@@ -708,6 +704,7 @@ fn resolve_tag(
 /// Per version, the tags 26.3 no longer has, with resolved entry names.
 fn missing_tag_tables() -> String {
     let current = load_tags(CURRENT);
+    assert!(!current.is_empty(), "datapack folder {CURRENT} has no tags");
     let mut out = String::new();
     for folder in TAG_VERSIONS {
         let tags = load_tags(folder);
@@ -741,7 +738,7 @@ fn main() {
         Path::new(CORE_ASSETS).is_dir(),
         "{CORE_ASSETS} not found: check out Pumpkin next to this plugin"
     );
-    for path in ["datapack", "tracked_data.json", "meta_data_type.json"] {
+    for path in ["tracked_data.json", "meta_data_type.json"] {
         println!("cargo:rerun-if-changed={CORE_ASSETS}/{path}");
     }
     if let Err(error) = vanilla::ensure_datapacks(SYNCED_REGISTRIES) {
@@ -780,12 +777,17 @@ fn main() {
     }
 
     for folder in NAME_VERSIONS {
+        let loaded = load_version(folder);
+        assert!(
+            !loaded.is_empty(),
+            "datapack folder {folder} has no synced registries"
+        );
         let _ = write!(
             tables,
             "pub static NAMES_{}: &[(&str, &[&str])] = &[",
             folder.to_uppercase()
         );
-        for (reg_name, entries) in load_version(folder) {
+        for (reg_name, entries) in loaded {
             let names: Vec<_> = entries.iter().map(|(name, _)| name.as_str()).collect();
             let _ = write!(tables, "({reg_name:?}, &{names:?}),");
         }
