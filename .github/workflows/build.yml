@@ -5,8 +5,6 @@ on:
     branches:
       - master
       - main
-    tags:
-      - '*'
   pull_request:
     branches:
       - master
@@ -79,24 +77,3 @@ jobs:
           name: ${{ matrix.artifact }}
           compression-level: 9
           path: dist/${{ matrix.filename }}
-
-  release:
-    name: Publish Release
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: build
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download built plugin artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: pumpkin-java-multiversion-*
-          path: dist
-          merge-multiple: true
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*.wasm
-          generate_release_notes: true
