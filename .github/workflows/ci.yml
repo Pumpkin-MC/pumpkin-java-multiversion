@@ -44,47 +44,36 @@ jobs:
       - name: Clone Pumpkin dependency
         run: git clone --depth 1 https://github.com/Pumpkin-MC/Pumpkin.git ../Pumpkin
 
+      # build.rs runs the data generator of server jars before 1.19.4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache extracted vanilla datapacks
+        uses: actions/cache@v4
+        with:
+          path: assets/datapacks
+          key: vanilla-datapacks-${{ hashFiles('build.rs', 'build/vanilla.rs') }}
+
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-          targets: wasm32-wasip2
+          targets: wasm32-wasip2, wasm32-wasip3
 
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Run Clippy (WASM target)
+      - name: Run Clippy (wasm32-wasip2)
         run: cargo clippy --target wasm32-wasip2 -- -D warnings
+
+      - name: Run Clippy (wasm32-wasip3)
+        run: cargo clippy --target wasm32-wasip3 -- -D warnings
 
       - name: Run Clippy (Host target)
         run: cargo clippy --all-targets -- -D warnings
-
-  build:
-    name: Compile & Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Clone Pumpkin dependency
-        run: git clone --depth 1 https://github.com/Pumpkin-MC/Pumpkin.git ../Pumpkin
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-wasip2
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Check native compilation
-        run: cargo check --all-targets
-
-      - name: Build WASM plugin (debug)
-        run: cargo build --target wasm32-wasip2
-
-      - name: Build WASM plugin (release)
-        run: cargo build --release --target wasm32-wasip2
 
   test:
     name: Test
@@ -95,6 +84,19 @@ jobs:
 
       - name: Clone Pumpkin dependency
         run: git clone --depth 1 https://github.com/Pumpkin-MC/Pumpkin.git ../Pumpkin
+
+      # build.rs runs the data generator of server jars before 1.19.4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache extracted vanilla datapacks
+        uses: actions/cache@v4
+        with:
+          path: assets/datapacks
+          key: vanilla-datapacks-${{ hashFiles('build.rs', 'build/vanilla.rs') }}
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable

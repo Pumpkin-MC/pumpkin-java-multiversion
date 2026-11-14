@@ -1,2 +1,4 @@
 /target
 Cargo.lock
+# Extracted from Mojang server jars by build.rs
+/assets/datapacks/
