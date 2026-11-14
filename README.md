@@ -28,6 +28,7 @@ Pumpkin is a path dependency, so clone it next to this repo:
 git clone https://github.com/Pumpkin-MC/Pumpkin.git
 git clone https://github.com/Pumpkin-MC/pumpkin-java-multiversion.git
 cd pumpkin-java-multiversion
+rustup target add wasm32-wasip2
 cargo build --release --target wasm32-wasip2
 ```
 
