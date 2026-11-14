@@ -44,9 +44,7 @@ pub fn add_entity_from_current(
     raw_payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<(i32, Vec<u8>)> {
-    let spawn_entity =
-        CSpawnEntity::read_packet_data(raw_payload, &pumpkin_data::packet::CURRENT_MC_VERSION)
-            .ok()?;
+    let spawn_entity = CSpawnEntity::read_packet_data(raw_payload).ok()?;
     let entity_type_id = spawn_entity.r#type.0 as u16;
     entity_data::track_spawn(spawn_entity.entity_id.0, entity_type_id);
     let format = SpawnFormat::of(version);
@@ -400,7 +398,7 @@ mod tests {
         };
         let mut current = Vec::new();
         spawn(EntityType::WARDEN.id)
-            .write_packet_data(&mut current, &pumpkin_data::packet::CURRENT_MC_VERSION)
+            .write_packet_data(&mut current)
             .unwrap();
         let client_type = remap_entity_id_for_version(EntityType::WARDEN.id, version);
         let mut expected = Vec::new();

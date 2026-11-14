@@ -12,11 +12,11 @@ pub use generated::{PacketId, VERSIONS, clientbound, serverbound};
 
 // The generated columns must follow `JavaMinecraftVersion` exactly.
 const _: () = {
-    assert!(crate::legacy::KNOWN_VERSIONS.len() == VERSIONS);
-    assert!(crate::legacy::KNOWN_VERSIONS[VERSIONS - 1] as usize == CURRENT_MC_VERSION as usize);
+    assert!(JavaMinecraftVersion::KNOWN.len() == VERSIONS);
+    assert!(JavaMinecraftVersion::KNOWN[VERSIONS - 1] as usize == CURRENT_MC_VERSION as usize);
     let mut i = 0;
     while i < VERSIONS {
-        assert!(crate::legacy::KNOWN_VERSIONS[i] as usize == i);
+        assert!(JavaMinecraftVersion::KNOWN[i] as usize == i);
         i += 1;
     }
 };

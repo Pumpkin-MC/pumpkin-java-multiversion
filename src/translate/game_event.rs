@@ -33,7 +33,7 @@ mod tests {
     fn payload(event: GameEvent) -> Vec<u8> {
         let mut out = Vec::new();
         CGameEvent::new(event, 0.0)
-            .write_packet_data(&mut out, &pumpkin_data::packet::CURRENT_MC_VERSION)
+            .write_packet_data(&mut out)
             .unwrap();
         out
     }

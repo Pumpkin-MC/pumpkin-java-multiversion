@@ -131,7 +131,7 @@ mod tests {
         };
         let mut current = Vec::new();
         packet(particle, 300)
-            .write_packet_data(&mut current, &pumpkin_data::packet::CURRENT_MC_VERSION)
+            .write_packet_data(&mut current)
             .unwrap();
         let mut expected = Vec::new();
         packet(

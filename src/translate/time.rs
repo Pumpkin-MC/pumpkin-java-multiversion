@@ -45,9 +45,7 @@ mod tests {
             CUpdateTime::new_clock(1200, 0, 6000, 0.0, 0.0),
         ] {
             let mut current = Vec::new();
-            packet
-                .write_packet_data(&mut current, &pumpkin_data::packet::CURRENT_MC_VERSION)
-                .unwrap();
+            packet.write_packet_data(&mut current).unwrap();
             for version in [
                 JavaMinecraftVersion::V_1_21_11,
                 JavaMinecraftVersion::V_1_20,

@@ -124,12 +124,7 @@ impl Writer {
             }
             ITEM_STACK => {
                 self.var_int(client?)?;
-                let stack = ItemStackSerializer::read_template_with_version(
-                    read,
-                    &pumpkin_data::packet::CURRENT_MC_VERSION,
-                )
-                .ok()?
-                .to_stack();
+                let stack = ItemStackSerializer::read_template(read).ok()?.to_stack();
                 if self.format >= RecipeFormat::V26_1 {
                     write_template_for_version(&stack, self.version, &mut self.out).ok()
                 } else {
@@ -360,7 +355,7 @@ mod tests {
     fn recipe_book_add_walks_as_1_21_11() {
         let mut payload = Vec::new();
         CRecipeBookAdd::new(false, &[])
-            .write_packet_data(&mut payload, &pumpkin_data::packet::CURRENT_MC_VERSION)
+            .write_packet_data(&mut payload)
             .unwrap();
         let out = recipe_book_add_from_current(&payload, JavaMinecraftVersion::V_1_21_11).unwrap();
 

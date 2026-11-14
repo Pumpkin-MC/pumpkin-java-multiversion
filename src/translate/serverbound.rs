@@ -1,9 +1,8 @@
 //! Serverbound play packets from older clients to 26.3.
 
-use crate::legacy::{LegacyRead, block_pos_to_current};
-use pumpkin_data::packet::CURRENT_MC_VERSION;
+use crate::legacy::{LegacyRead, LegacyReadExt, block_pos_to_current};
 use pumpkin_protocol::{
-    ClientPacket, ServerPacket, VarInt,
+    ClientPacket, VarInt,
     java::server::play::{
         ActionType, SChatMessage, SClientInformationPlay, SInteract, SKeepAlive, SPlayerAbilities,
         SPlayerPosition, SPlayerPositionRotation, SUseItemOn,
@@ -135,7 +134,7 @@ pub fn interact_to_current(
                 r#type: VarInt(ActionType::InteractAt as i32),
                 ..interact
             }
-            .write_packet_data(&mut out, &pumpkin_data::packet::CURRENT_MC_VERSION)
+            .write_packet_data(&mut out)
             .ok()?;
             Some((play::INTERACT.current(), out))
         }
@@ -216,11 +215,9 @@ pub fn use_item_on_to_current(
         return Some((play::USE_ITEM_ON.current(), payload.to_vec()));
     }
     if version >= JavaMinecraftVersion::V_1_9 {
-        let packet = SUseItemOn::read(&mut payload, &version).ok()?;
+        let packet = SUseItemOn::read_legacy(&mut payload, &version).ok()?;
         let mut out = Vec::new();
-        packet
-            .write_packet_data(&mut out, &CURRENT_MC_VERSION)
-            .ok()?;
+        packet.write_packet_data(&mut out).ok()?;
         return Some((play::USE_ITEM_ON.current(), out));
     }
 
@@ -230,7 +227,7 @@ pub fn use_item_on_to_current(
         let z = payload.get_i32_be().ok()?;
         BlockPos::new(x, y, z)
     } else {
-        payload.get_block_pos(&version).ok()?
+        payload.get_block_pos_legacy(&version).ok()?
     };
     let face = payload.get_u8().ok()?;
     if face == 255 {
@@ -260,9 +257,7 @@ pub fn use_item_on_to_current(
         sequence: VarInt(0),
     };
     let mut out = Vec::new();
-    packet
-        .write_packet_data(&mut out, &CURRENT_MC_VERSION)
-        .ok()?;
+    packet.write_packet_data(&mut out).ok()?;
     Some((play::USE_ITEM_ON.current(), out))
 }
 
@@ -285,9 +280,9 @@ pub fn play_to_current(
     }
 
     if new_id == play::KEEP_ALIVE.current() && version < JavaMinecraftVersion::V_1_12_2 {
-        let pkt = SKeepAlive::read(&mut payload, &version).ok()?;
+        let pkt = SKeepAlive::read_legacy(&mut payload, &version).ok()?;
         let mut out = Vec::new();
-        pkt.write_packet_data(&mut out, &CURRENT_MC_VERSION).ok()?;
+        pkt.write_packet_data(&mut out).ok()?;
         return Some(out);
     }
 
@@ -310,31 +305,31 @@ pub fn play_to_current(
                 server_listing: true,
             }
         } else {
-            SClientInformationPlay::read(&mut payload, &version).ok()?
+            SClientInformationPlay::read_legacy(&mut payload, &version).ok()?
         };
         let mut out = Vec::new();
-        pkt.write_packet_data(&mut out, &CURRENT_MC_VERSION).ok()?;
+        pkt.write_packet_data(&mut out).ok()?;
         return Some(out);
     }
 
     if new_id == play::MOVE_PLAYER_POS.current() && version <= JavaMinecraftVersion::V_1_7_6 {
-        let pkt = SPlayerPosition::read(&mut payload, &version).ok()?;
+        let pkt = SPlayerPosition::read_legacy(&mut payload, &version).ok()?;
         let mut out = Vec::new();
-        pkt.write_packet_data(&mut out, &CURRENT_MC_VERSION).ok()?;
+        pkt.write_packet_data(&mut out).ok()?;
         return Some(out);
     }
 
     if new_id == play::MOVE_PLAYER_POS_ROT.current() && version <= JavaMinecraftVersion::V_1_7_6 {
-        let pkt = SPlayerPositionRotation::read(&mut payload, &version).ok()?;
+        let pkt = SPlayerPositionRotation::read_legacy(&mut payload, &version).ok()?;
         let mut out = Vec::new();
-        pkt.write_packet_data(&mut out, &CURRENT_MC_VERSION).ok()?;
+        pkt.write_packet_data(&mut out).ok()?;
         return Some(out);
     }
 
     if new_id == play::PLAYER_ABILITIES.current() && version < JavaMinecraftVersion::V_1_16 {
-        let pkt = SPlayerAbilities::read(&mut payload, &version).ok()?;
+        let pkt = SPlayerAbilities::read_legacy(&mut payload, &version).ok()?;
         let mut out = Vec::new();
-        pkt.write_packet_data(&mut out, &CURRENT_MC_VERSION).ok()?;
+        pkt.write_packet_data(&mut out).ok()?;
         return Some(out);
     }
 
@@ -351,10 +346,10 @@ pub fn play_to_current(
                 checksum: 0,
             }
         } else {
-            SChatMessage::read(&mut payload, &version).ok()?
+            SChatMessage::read_legacy(&mut payload, &version).ok()?
         };
         let mut out = Vec::new();
-        pkt.write_packet_data(&mut out, &CURRENT_MC_VERSION).ok()?;
+        pkt.write_packet_data(&mut out).ok()?;
         return Some(out);
     }
 
@@ -396,7 +391,7 @@ pub fn play_to_current(
             let x = payload.get_i32_be().ok()?;
             let y = i32::from(payload.get_i16_be().ok()?);
             let z = payload.get_i32_be().ok()?;
-            let _ = out.write_block_pos(&BlockPos::new(x, y, z), &CURRENT_MC_VERSION);
+            let _ = out.write_block_pos(&BlockPos::new(x, y, z));
         } else {
             let pos_val = block_pos_to_current(payload.get_i64_be().ok()?, &version);
             let _ = out.write_i64_be(pos_val);
@@ -431,8 +426,7 @@ pub fn play_to_current(
             let y = i32::from(payload.get_u8().ok()?);
             let z = payload.get_i32_be().ok()?;
             let mut b = Vec::with_capacity(8);
-            b.write_block_pos(&BlockPos::new(x, y, z), &CURRENT_MC_VERSION)
-                .ok()?;
+            b.write_block_pos(&BlockPos::new(x, y, z)).ok()?;
             b
         } else {
             let pos_val = block_pos_to_current(payload.get_i64_be().ok()?, &version);
@@ -634,11 +628,7 @@ mod tests {
         client.extend_from_slice(&[1, 1]);
         let (id, payload) = interact_to_current(&client, V1_21_11).unwrap();
         assert_eq!(id, play::INTERACT.current());
-        let read = SInteract::read(
-            &mut payload.as_slice(),
-            &pumpkin_data::packet::CURRENT_MC_VERSION,
-        )
-        .unwrap();
+        let read = SInteract::read(&mut payload.as_slice()).unwrap();
         assert_eq!(read.entity_id, VarInt(5));
         assert_eq!(read.hand, Some(VarInt(1)));
         assert!(read.sneaking);

@@ -1,8 +1,8 @@
-//! Pre-26.3 encodings of `CPlayerInfoUpdate`; `pumpkin-protocol` already writes them per version.
+//! Pre-26.3 encodings from `pumpkin-protocol`'s `java/client/play/player_info_update.rs`.
 
-use crate::legacy::LegacyWrite;
-use pumpkin_protocol::ClientPacket;
+use crate::legacy::{LegacyWrite, LegacyWriteExt};
 use pumpkin_protocol::java::client::play::CPlayerInfoUpdate;
+use pumpkin_protocol::java::client::play::PlayerInfoFlags;
 use pumpkin_protocol::ser::WritingError;
 use pumpkin_util::version::JavaMinecraftVersion;
 use std::io::Write;
@@ -13,6 +13,16 @@ impl LegacyWrite for CPlayerInfoUpdate<'_> {
         write: impl Write,
         version: &JavaMinecraftVersion,
     ) -> Result<(), WritingError> {
-        self.write_packet_data(write, version)
+        // List order was added in 1.21.2 and the hat in 1.21.4
+        let mut flags = PlayerInfoFlags::from_bits_truncate(self.actions);
+        if *version < JavaMinecraftVersion::V_1_21_2 {
+            flags.remove(PlayerInfoFlags::UPDATE_LIST_PRIORITY);
+        }
+        if *version < JavaMinecraftVersion::V_1_21_4 {
+            flags.remove(PlayerInfoFlags::UPDATE_HAT);
+        }
+        self.write_flagged(write, flags, |p, name| {
+            p.write_component_legacy(name, version)
+        })
     }
 }

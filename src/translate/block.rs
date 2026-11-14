@@ -56,9 +56,7 @@ pub fn block_update_from_current(
     let raw_pos = payload.get_i64_be().ok()?;
     let pos_bytes = raw_pos.to_be_bytes();
     let mut pos_slice = pos_bytes.as_slice();
-    let pos = pos_slice
-        .get_block_pos(&pumpkin_data::packet::CURRENT_MC_VERSION)
-        .ok()?;
+    let pos = pos_slice.get_block_pos().ok()?;
     if version < JavaMinecraftVersion::V_1_18 && !(0..256).contains(&pos.0.y) {
         return None;
     }

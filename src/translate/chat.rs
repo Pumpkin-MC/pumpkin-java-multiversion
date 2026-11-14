@@ -1,8 +1,7 @@
 //! Clientbound text components, chat, scoreboard, and scalar layout shifts.
 
-use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
-    ClientPacket, ServerPacket, VarInt,
+    ServerPacket, VarInt,
     java::client::play::{
         CChangeDifficulty, CDisplayObjective, CHeadRot, CKeepAlive, COpenSignEditor,
         CRemoveMobEffect, CSetEntityLink, CSetExperience, CSetHealth, CSetSelectedSlot,
@@ -12,16 +11,13 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
-use crate::legacy::{LegacyWriteExt, ids};
+use crate::legacy::{LegacyWrite, LegacyWriteExt, ids};
 
-fn reencode<'a, P: ServerPacket<'a> + ClientPacket>(
-    mut payload: &'a [u8],
+fn reencode<'a, P: ServerPacket<'a> + LegacyWrite>(
+    payload: &'a [u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let packet = P::read(&mut payload, &CURRENT_MC_VERSION).ok()?;
-    let mut out = Vec::new();
-    packet.write_packet_data(&mut out, &version).ok()?;
-    Some(out)
+    super::reencode_current::<P>(payload, version)
 }
 
 fn truncate_chars(s: &str, max_chars: usize) -> &str {
@@ -36,7 +32,7 @@ pub fn component_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let comp = payload.get_component(&CURRENT_MC_VERSION).ok()?;
+    let comp = payload.get_component().ok()?;
     let mut out = Vec::new();
     out.write_component_legacy(&comp, &version).ok()?;
     Some(out)
@@ -44,8 +40,8 @@ pub fn component_from_current(
 
 /// `TAB_LIST`: header and footer `TextComponent`s.
 pub fn tab_list_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
-    let header = payload.get_component(&CURRENT_MC_VERSION).ok()?;
-    let footer = payload.get_component(&CURRENT_MC_VERSION).ok()?;
+    let header = payload.get_component().ok()?;
+    let footer = payload.get_component().ok()?;
     let mut out = Vec::new();
     out.write_component_legacy(&header, &version).ok()?;
     out.write_component_legacy(&footer, &version).ok()?;
@@ -57,7 +53,7 @@ pub fn system_chat_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<(i32, Vec<u8>)> {
-    let content = payload.get_component(&CURRENT_MC_VERSION).ok()?;
+    let content = payload.get_component().ok()?;
     let overlay = payload.get_bool().ok()?;
 
     if version <= JavaMinecraftVersion::V_1_7_6 && overlay {
@@ -94,7 +90,7 @@ pub fn server_data_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let motd = payload.get_component(&CURRENT_MC_VERSION).ok()?;
+    let motd = payload.get_component().ok()?;
     let _has_icon = payload.get_bool().ok()?;
     let mut out = Vec::new();
     if version >= JavaMinecraftVersion::V_1_20_5 {
@@ -134,11 +130,7 @@ pub fn set_held_slot_from_current(
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
     let slot = payload.get_var_int().ok()?.0 as i8;
-    let mut out = Vec::new();
-    CSetSelectedSlot::new(slot)
-        .write_packet_data(&mut out, &version)
-        .ok()?;
-    Some(out)
+    super::legacy_bytes(&CSetSelectedSlot::new(slot), version)
 }
 
 pub fn forget_level_chunk_from_current(
@@ -207,10 +199,7 @@ pub fn set_objective_from_current(
     if version <= JavaMinecraftVersion::V_1_7_6 {
         // 1.7 writes value before mode byte!
         let display = if mode == 0 || mode == 2 {
-            payload
-                .get_component(&CURRENT_MC_VERSION)
-                .ok()?
-                .to_pretty_console()
+            payload.get_component().ok()?.to_pretty_console()
         } else {
             String::new()
         };
@@ -220,7 +209,7 @@ pub fn set_objective_from_current(
     }
     out.write_u8(mode).ok()?;
     if mode == 0 || mode == 2 {
-        let display = payload.get_component(&CURRENT_MC_VERSION).ok()?;
+        let display = payload.get_component().ok()?;
         let render_type = payload.get_var_int().ok()?;
         if version < JavaMinecraftVersion::V_1_13 {
             let text = display.to_pretty_console();
@@ -249,9 +238,7 @@ pub fn set_score_from_current(
     let entity_name = payload.get_str_borrowed().ok()?;
     let objective_name = payload.get_str_borrowed().ok()?;
     let value = payload.get_var_int().ok()?;
-    let display_name = payload
-        .get_option(|r| r.get_component(&CURRENT_MC_VERSION))
-        .ok()?;
+    let display_name = payload.get_option(|r| r.get_component()).ok()?;
     let mut out = Vec::new();
     if version >= JavaMinecraftVersion::V_1_20_3 {
         out.write_string(entity_name).ok()?;
@@ -297,11 +284,10 @@ pub fn update_mob_effect_from_current(
     let amplifier = payload.get_var_int().ok()?;
     let duration = payload.get_var_int().ok()?;
     let flags = payload.get_i8().ok()?;
-    let mut out = Vec::new();
-    CUpdateMobEffect::new(entity_id, effect_id, amplifier, duration, flags)
-        .write_packet_data(&mut out, &version)
-        .ok()?;
-    Some(out)
+    super::legacy_bytes(
+        &CUpdateMobEffect::new(entity_id, effect_id, amplifier, duration, flags),
+        version,
+    )
 }
 
 pub fn remove_mob_effect_from_current(
@@ -310,18 +296,14 @@ pub fn remove_mob_effect_from_current(
 ) -> Option<Vec<u8>> {
     let entity_id = payload.get_var_int().ok()?;
     let effect_id = payload.get_var_int().ok()?;
-    let mut out = Vec::new();
-    CRemoveMobEffect::new(entity_id, effect_id)
-        .write_packet_data(&mut out, &version)
-        .ok()?;
-    Some(out)
+    super::legacy_bytes(&CRemoveMobEffect::new(entity_id, effect_id), version)
 }
 
 pub fn block_event_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let location = payload.get_block_pos(&CURRENT_MC_VERSION).ok()?;
+    let location = payload.get_block_pos().ok()?;
     if version < JavaMinecraftVersion::V_1_18 && !(0..256).contains(&location.0.y) {
         return None;
     }
@@ -347,7 +329,7 @@ pub fn block_destruction_from_current(
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
     let entity_id = payload.get_var_int().ok()?;
-    let location = payload.get_block_pos(&CURRENT_MC_VERSION).ok()?;
+    let location = payload.get_block_pos().ok()?;
     let stage = payload.get_i8().ok()?;
     let mut out = Vec::new();
     out.write_var_int(&entity_id).ok()?;
@@ -367,7 +349,7 @@ pub fn level_event_from_current(
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
     let event = payload.get_i32_be().ok()?;
-    let location = payload.get_block_pos(&CURRENT_MC_VERSION).ok()?;
+    let location = payload.get_block_pos().ok()?;
     let mut data = payload.get_i32_be().ok()?;
     let disable_relative_volume = payload.get_bool().ok()?;
     if event == 2001 && data >= 0 {

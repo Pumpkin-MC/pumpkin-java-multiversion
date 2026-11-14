@@ -48,7 +48,7 @@ enum Properties {
 
 fn properties(id: u32) -> Properties {
     let id = id as i32;
-    let of = |argument: ArgumentType| argument.to_id(&pumpkin_data::packet::CURRENT_MC_VERSION);
+    let of = |argument: ArgumentType| argument.to_id();
     let resource = || Identifier::vanilla_static("");
     if id
         == of(ArgumentType::Float {
@@ -238,7 +238,7 @@ mod tests {
         };
         let mut current = Vec::new();
         CCommands::new(nodes(), VarInt(0))
-            .write_packet_data(&mut current, &pumpkin_data::packet::CURRENT_MC_VERSION)
+            .write_packet_data(&mut current)
             .unwrap();
         let version = JavaMinecraftVersion::V_1_21_5;
         let mut expected = Vec::new();
@@ -271,7 +271,7 @@ mod tests {
         .into_boxed_slice();
         let mut current = Vec::new();
         CCommands::new(nodes, VarInt(0))
-            .write_packet_data(&mut current, &pumpkin_data::packet::CURRENT_MC_VERSION)
+            .write_packet_data(&mut current)
             .unwrap();
         current
     }

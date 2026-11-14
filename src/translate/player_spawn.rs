@@ -26,8 +26,7 @@ pub fn login_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> 
     let reduced_debug_info = payload.get_bool().ok()?;
     let enabled_respawn_screen = payload.get_bool().ok()?;
     let limited_crafting = payload.get_bool().ok()?;
-    let spawn_data =
-        PlayerSpawnData::read(&mut payload, &pumpkin_data::packet::CURRENT_MC_VERSION).ok()?;
+    let spawn_data = PlayerSpawnData::read(&mut payload).ok()?;
     let online_mode = payload.get_bool().ok()?;
     let enforce_secure_chat = payload.get_bool().ok()?;
 
@@ -55,7 +54,7 @@ pub fn login_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> 
 
 /// RESPAWN: same game mode change as LOGIN.
 pub fn respawn_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Option<Vec<u8>> {
-    let packet = CRespawn::read(&mut payload, &pumpkin_data::packet::CURRENT_MC_VERSION).ok()?;
+    let packet = CRespawn::read(&mut payload).ok()?;
     let registry = registry::legacy_nbt(version, packet.player_spawn_info.dimension.minecraft_name);
     let mut out = Vec::new();
     packet
@@ -71,9 +70,7 @@ pub fn spawn_position_from_current(
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
     let dimension = payload.get_str_borrowed().ok()?.to_string();
-    let location = payload
-        .get_block_pos(&pumpkin_data::packet::CURRENT_MC_VERSION)
-        .ok()?;
+    let location = payload.get_block_pos().ok()?;
     let yaw = payload.get_f32_be().ok()?;
     let pitch = payload.get_f32_be().ok()?;
     super::legacy_bytes(
@@ -118,9 +115,7 @@ mod tests {
             enforce_secure_chat: false,
         };
         let mut payload = Vec::new();
-        packet
-            .write_packet_data(&mut payload, &pumpkin_data::packet::CURRENT_MC_VERSION)
-            .unwrap();
+        packet.write_packet_data(&mut payload).unwrap();
         let mut expected = Vec::new();
         let version = JavaMinecraftVersion::V_1_21_11;
         let registry = registry::legacy_nbt(version, packet.spawn_data.dimension.minecraft_name);
@@ -144,9 +139,7 @@ mod tests {
             )
         };
         let mut current = Vec::new();
-        packet()
-            .write_packet_data(&mut current, &pumpkin_data::packet::CURRENT_MC_VERSION)
-            .unwrap();
+        packet().write_packet_data(&mut current).unwrap();
         for version in [
             JavaMinecraftVersion::V_1_21_7,
             JavaMinecraftVersion::V_1_16,

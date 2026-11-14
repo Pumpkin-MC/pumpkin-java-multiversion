@@ -17,9 +17,10 @@
 //! 3. Add the new `*_packets.json` to `assets/legacy_packets` and rerun `pumpkin-codegen`.
 //! 4. Add the version to `JavaMinecraftVersion`.
 
+#[cfg(test)]
+mod fixtures;
 pub mod ids;
 pub mod packets;
-pub mod particle;
 pub mod removed;
 pub mod text;
 
@@ -45,62 +46,6 @@ use pumpkin_protocol::{
     ser::{NetworkReadExt, NetworkWriteExt, ReadingError, WritingError},
 };
 use pumpkin_util::{math::position::BlockPos, text::TextComponent, version::JavaMinecraftVersion};
-
-/// Every known version, oldest first.
-pub const KNOWN_VERSIONS: &[JavaMinecraftVersion] = &[
-    JavaMinecraftVersion::V_1_7_2,
-    JavaMinecraftVersion::V_1_7_6,
-    JavaMinecraftVersion::V_1_8,
-    JavaMinecraftVersion::V_1_9,
-    JavaMinecraftVersion::V_1_9_1,
-    JavaMinecraftVersion::V_1_9_2,
-    JavaMinecraftVersion::V_1_9_3,
-    JavaMinecraftVersion::V_1_10,
-    JavaMinecraftVersion::V_1_11,
-    JavaMinecraftVersion::V_1_11_1,
-    JavaMinecraftVersion::V_1_12,
-    JavaMinecraftVersion::V_1_12_1,
-    JavaMinecraftVersion::V_1_12_2,
-    JavaMinecraftVersion::V_1_13,
-    JavaMinecraftVersion::V_1_13_1,
-    JavaMinecraftVersion::V_1_13_2,
-    JavaMinecraftVersion::V_1_14,
-    JavaMinecraftVersion::V_1_14_1,
-    JavaMinecraftVersion::V_1_14_2,
-    JavaMinecraftVersion::V_1_14_3,
-    JavaMinecraftVersion::V_1_14_4,
-    JavaMinecraftVersion::V_1_15,
-    JavaMinecraftVersion::V_1_15_1,
-    JavaMinecraftVersion::V_1_15_2,
-    JavaMinecraftVersion::V_1_16,
-    JavaMinecraftVersion::V_1_16_1,
-    JavaMinecraftVersion::V_1_16_2,
-    JavaMinecraftVersion::V_1_16_3,
-    JavaMinecraftVersion::V_1_16_4,
-    JavaMinecraftVersion::V_1_17,
-    JavaMinecraftVersion::V_1_17_1,
-    JavaMinecraftVersion::V_1_18,
-    JavaMinecraftVersion::V_1_18_2,
-    JavaMinecraftVersion::V_1_19,
-    JavaMinecraftVersion::V_1_19_1,
-    JavaMinecraftVersion::V_1_19_3,
-    JavaMinecraftVersion::V_1_19_4,
-    JavaMinecraftVersion::V_1_20,
-    JavaMinecraftVersion::V_1_20_2,
-    JavaMinecraftVersion::V_1_20_3,
-    JavaMinecraftVersion::V_1_20_5,
-    JavaMinecraftVersion::V_1_21,
-    JavaMinecraftVersion::V_1_21_2,
-    JavaMinecraftVersion::V_1_21_4,
-    JavaMinecraftVersion::V_1_21_5,
-    JavaMinecraftVersion::V_1_21_6,
-    JavaMinecraftVersion::V_1_21_7,
-    JavaMinecraftVersion::V_1_21_9,
-    JavaMinecraftVersion::V_1_21_11,
-    JavaMinecraftVersion::V_26_1,
-    JavaMinecraftVersion::V_26_2,
-    JavaMinecraftVersion::V_26_3,
-];
 
 /// Where an older client expects a packet.
 pub trait LegacyPacket {
@@ -343,7 +288,7 @@ pub fn write_bit_set_legacy(
     version: &JavaMinecraftVersion,
 ) -> Result<(), WritingError> {
     if *version >= JavaMinecraftVersion::V_26_3 {
-        return bit_set.encode_with_version(&mut write, version);
+        return bit_set.encode(&mut write);
     }
     write.write_var_int(&VarInt(bit_set.0.len() as i32))?;
     for word in &bit_set.0 {

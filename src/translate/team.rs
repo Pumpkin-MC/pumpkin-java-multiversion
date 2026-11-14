@@ -46,15 +46,9 @@ pub fn set_player_team_from_current(
 
     let has_parameters = matches!(method, TeamMethod::Create | TeamMethod::Update);
     let components = if has_parameters {
-        let display_name = payload
-            .get_component(&pumpkin_data::packet::CURRENT_MC_VERSION)
-            .ok()?;
-        let prefix = payload
-            .get_component(&pumpkin_data::packet::CURRENT_MC_VERSION)
-            .ok()?;
-        let suffix = payload
-            .get_component(&pumpkin_data::packet::CURRENT_MC_VERSION)
-            .ok()?;
+        let display_name = payload.get_component().ok()?;
+        let prefix = payload.get_component().ok()?;
+        let suffix = payload.get_component().ok()?;
         Some((display_name, prefix, suffix))
     } else {
         None
@@ -137,9 +131,7 @@ mod tests {
                 players: vec!["Steve".to_string(), "Alex".to_string()].into_boxed_slice(),
             };
             let mut payload = Vec::new();
-            packet
-                .write_packet_data(&mut payload, &pumpkin_data::packet::CURRENT_MC_VERSION)
-                .unwrap();
+            packet.write_packet_data(&mut payload).unwrap();
             for version in [
                 JavaMinecraftVersion::V_1_21_11,
                 JavaMinecraftVersion::V_1_12_2,

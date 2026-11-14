@@ -38,9 +38,7 @@ pub fn key_to_current(mut payload: &[u8], version: JavaMinecraftVersion) -> Opti
     }
     let packet = SEncryptionResponse::read_legacy(&mut payload, &version).ok()?;
     let mut out = Vec::new();
-    packet
-        .write_packet_data(&mut out, &pumpkin_data::packet::CURRENT_MC_VERSION)
-        .ok()?;
+    packet.write_packet_data(&mut out).ok()?;
     Some(out)
 }
 
@@ -109,7 +107,7 @@ mod tests {
 
     fn read_current(payload: &[u8]) -> SEncryptionResponse {
         let mut slice = payload;
-        SEncryptionResponse::read(&mut slice, &pumpkin_data::packet::CURRENT_MC_VERSION).unwrap()
+        SEncryptionResponse::read(&mut slice).unwrap()
     }
 
     #[test]
@@ -172,9 +170,7 @@ mod tests {
     fn hello_outgoing_1_7_uses_i16_lengths() {
         let packet = CEncryptionRequest::new("", b"public_key_bytes", b"tokn", true);
         let mut payload = Vec::new();
-        packet
-            .write_packet_data(&mut payload, &pumpkin_data::packet::CURRENT_MC_VERSION)
-            .unwrap();
+        packet.write_packet_data(&mut payload).unwrap();
         let (id, out) = PacketTranslator::translate_connection_outgoing(
             JavaConnectionState::Login,
             ids::clientbound::login::HELLO.current(),
@@ -201,9 +197,7 @@ mod tests {
         let session = uuid::Uuid::from_u128(2);
         let packet = CLoginSuccess::new(&uuid, "Steve", &[], true, session);
         let mut payload = Vec::new();
-        packet
-            .write_packet_data(&mut payload, &pumpkin_data::packet::CURRENT_MC_VERSION)
-            .unwrap();
+        packet.write_packet_data(&mut payload).unwrap();
         (uuid, payload)
     }
 

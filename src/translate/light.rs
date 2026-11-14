@@ -1,6 +1,5 @@
 //! Light data: LIGHT_UPDATE and the tail of LEVEL_CHUNK_WITH_LIGHT.
 
-use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
     VarInt,
     codec::bit_set::BitSet,
@@ -9,9 +8,11 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
+use crate::legacy::LegacyWrite;
+
 /// Reads 26.3 light data.
 pub fn decode_current_light(mut light: &[u8]) -> Option<LightData> {
-    let mut data = LightData::read(&mut light, &CURRENT_MC_VERSION).ok()?;
+    let mut data = LightData::read(&mut light).ok()?;
     data.trust_edges = true;
     Some(data)
 }
@@ -150,9 +151,9 @@ pub fn write_light_data(
                     && data.empty_block_light_mask.get_bit(b))
         });
         let shifted = shift_light_for_legacy_height(&data, if has_extended { 4 } else { 0 });
-        shifted.write(out, &version).ok()
+        shifted.write_legacy(out, &version).ok()
     } else {
-        data.write(out, &version).ok()
+        data.write_legacy(out, &version).ok()
     }
 }
 
@@ -168,7 +169,7 @@ pub fn write_chunk_light_packet(
     out.write_var_int(&VarInt(chunk_x)).ok()?;
     out.write_var_int(&VarInt(chunk_z)).ok()?;
     let shifted = shift_light_for_legacy_height(light, base_section);
-    shifted.write(&mut out, &version).ok()?;
+    shifted.write_legacy(&mut out, &version).ok()?;
     Some(out)
 }
 
@@ -195,8 +196,7 @@ mod tests {
         let mask = BitSet(Box::new([0b1011_0000_0001]));
         let mut light = Vec::new();
         for _ in 0..4 {
-            mask.encode_with_version(&mut light, &CURRENT_MC_VERSION)
-                .unwrap();
+            mask.encode(&mut light).unwrap();
         }
         let masks_len = light.len();
         // one sky array, no block arrays

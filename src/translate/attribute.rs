@@ -30,8 +30,7 @@ pub fn update_attributes_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let mut packet =
-        CUpdateAttributes::read(&mut payload, &pumpkin_data::packet::CURRENT_MC_VERSION).ok()?;
+    let mut packet = CUpdateAttributes::read(&mut payload).ok()?;
     packet.properties.retain_mut(|property| {
         client_attribute(property.id, version).is_some_and(|id| {
             property.id = id;
@@ -68,9 +67,7 @@ mod tests {
             ],
         );
         let mut current = Vec::new();
-        packet
-            .write_packet_data(&mut current, &pumpkin_data::packet::CURRENT_MC_VERSION)
-            .unwrap();
+        packet.write_packet_data(&mut current).unwrap();
 
         let version = JavaMinecraftVersion::V_1_21_11;
         // 1.21.11 has no friction modifier

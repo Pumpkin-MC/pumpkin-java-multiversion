@@ -73,10 +73,7 @@ pub(crate) fn reencode_current<'a, P: ServerPacket<'a> + LegacyWrite>(
     mut payload: &'a [u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    legacy_bytes(
-        &P::read(&mut payload, &pumpkin_data::packet::CURRENT_MC_VERSION).ok()?,
-        version,
-    )
+    legacy_bytes(&P::read(&mut payload).ok()?, version)
 }
 
 /// `packet` in `version`'s layout.

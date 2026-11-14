@@ -188,9 +188,7 @@ pub fn container_set_content_from_current(
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
     let format = ContainerFormat::of(version);
-    let container_id = payload
-        .get_container_id(&pumpkin_data::packet::CURRENT_MC_VERSION)
-        .ok()?;
+    let container_id = payload.get_container_id().ok()?;
     let state_id = payload.get_var_int().ok()?;
     let count = payload.get_var_int().ok()?;
 
@@ -225,9 +223,7 @@ pub fn container_set_slot_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let container_id = payload
-        .get_container_id(&pumpkin_data::packet::CURRENT_MC_VERSION)
-        .ok()?;
+    let container_id = payload.get_container_id().ok()?;
     let state_id = payload.get_var_int().ok()?;
     let slot = payload.get_i16_be().ok()?;
     if version < JavaMinecraftVersion::V_1_9 && container_id.0 == 0 && slot == 45 {
@@ -685,10 +681,7 @@ fn component_payload_to_current(
         DataComponent::EntityData | DataComponent::BlockEntityData
             if TypedDataFormat::of(version) == TypedDataFormat::V1_20_5 =>
         {
-            let Some(NbtTag::Compound(mut nbt)) = read
-                .get_nbt_with_version(&pumpkin_data::packet::CURRENT_MC_VERSION)
-                .ok()?
-            else {
+            let Some(NbtTag::Compound(mut nbt)) = read.get_nbt_owned().ok()? else {
                 return None;
             };
             let name = nbt.get_string("id")?;
@@ -700,11 +693,7 @@ fn component_payload_to_current(
             };
             nbt.child_tags.remove("id");
             out.write_var_int(&VarInt(type_id)).ok()?;
-            out.write_compound_nbt_with_version(
-                Some(&nbt),
-                &pumpkin_data::packet::CURRENT_MC_VERSION,
-            )
-            .ok()?;
+            out.write_compound_nbt(&nbt).ok()?;
         }
         _ => copy_payload(id, read, out)?,
     }
@@ -881,7 +870,7 @@ mod tests {
         let stack = ItemStackSerializer::from(ItemStack::new(3, &Item::DIRT));
         let mut current = Vec::new();
         CSetContainerSlot::new(0, 5, 36, &stack)
-            .write_packet_data(&mut current, &pumpkin_data::packet::CURRENT_MC_VERSION)
+            .write_packet_data(&mut current)
             .unwrap();
 
         let dirt = remap_item_id_for_version(Item::DIRT.id, V1_21_11);

@@ -87,9 +87,7 @@ fn read_entry(read: &mut &[u8], flags: PlayerInfoFlags) -> Option<Entry> {
         .ok()?;
     let display_name = flags
         .contains(PlayerInfoFlags::UPDATE_DISPLAY_NAME)
-        .then(|| {
-            read.get_option(|read| read.get_component(&pumpkin_data::packet::CURRENT_MC_VERSION))
-        })
+        .then(|| read.get_option(|read| read.get_component()))
         .transpose()
         .ok()?;
     let list_order = flags

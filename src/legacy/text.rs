@@ -26,7 +26,7 @@ pub fn to_json(component: &TextComponent, version: &JavaMinecraftVersion) -> Str
 
 #[must_use]
 pub fn to_nbt(component: &TextComponent, version: &JavaMinecraftVersion) -> NbtTag {
-    let mut tag = component.to_nbt_tag_for_version(&pumpkin_data::packet::CURRENT_MC_VERSION);
+    let mut tag = component.to_nbt_tag();
     downgrade(&mut tag, *version);
     tag
 }

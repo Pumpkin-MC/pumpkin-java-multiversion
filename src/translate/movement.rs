@@ -234,9 +234,7 @@ mod tests {
         for velocity in [Vector3::new(0.5, -0.25, 0.0), Vector3::new(0.0, 0.0, 0.0)] {
             let packet = CEntityVelocity::new(VarInt(7), velocity);
             let mut current = Vec::new();
-            packet
-                .write_packet_data(&mut current, &pumpkin_data::packet::CURRENT_MC_VERSION)
-                .unwrap();
+            packet.write_packet_data(&mut current).unwrap();
             let version = JavaMinecraftVersion::V_1_21_7;
             let mut expected = Vec::new();
             packet.write_legacy(&mut expected, &version).unwrap();

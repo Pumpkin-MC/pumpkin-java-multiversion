@@ -57,7 +57,7 @@ impl Plugin for MultiVersionPlugin {
     fn on_load(&self, context: Context) -> Result<(), String> {
         tracing::info!("Loading Pumpkin Java Multi-Version Plugin...");
 
-        let versions: Vec<_> = crate::legacy::KNOWN_VERSIONS
+        let versions: Vec<_> = JavaMinecraftVersion::KNOWN
             .iter()
             .filter(|&&version| version >= OLDEST_SUPPORTED && version != CURRENT_MC_VERSION)
             .map(|&version| to_wasm_java_version(version))

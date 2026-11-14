@@ -1,7 +1,7 @@
 //! Particles: id and options, LEVEL_PARTICLES.
 
-use crate::legacy::particle::ParticleOptionsLayout;
 use pumpkin_data::particle::Particle;
+use pumpkin_protocol::codec::particle::ParticleOptionsLayout;
 use pumpkin_protocol::{
     VarInt,
     java::client::play::CParticle,
@@ -336,9 +336,7 @@ mod tests {
             )
         };
         let mut current = Vec::new();
-        packet(flame)
-            .write_packet_data(&mut current, &pumpkin_data::packet::CURRENT_MC_VERSION)
-            .unwrap();
+        packet(flame).write_packet_data(&mut current).unwrap();
 
         let version = JavaMinecraftVersion::V_26_2;
         let id = remap_particle_id_for_version(Particle::Flame.to_id(), version);

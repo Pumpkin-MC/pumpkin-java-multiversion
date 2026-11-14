@@ -45,20 +45,13 @@ pub fn update_advancements_from_current(
         let has_display = payload.get_bool().ok()?;
         out.write_bool(has_display).ok()?;
         if has_display {
-            let title = payload
-                .get_component(&pumpkin_data::packet::CURRENT_MC_VERSION)
-                .ok()?;
-            let description = payload
-                .get_component(&pumpkin_data::packet::CURRENT_MC_VERSION)
-                .ok()?;
+            let title = payload.get_component().ok()?;
+            let description = payload.get_component().ok()?;
             out.write_component_legacy(&title, &version).ok()?;
             out.write_component_legacy(&description, &version).ok()?;
-            let icon = ItemStackSerializer::read_template_with_version(
-                &mut payload,
-                &pumpkin_data::packet::CURRENT_MC_VERSION,
-            )
-            .ok()?
-            .to_stack();
+            let icon = ItemStackSerializer::read_template(&mut payload)
+                .ok()?
+                .to_stack();
             write_item_for_version(&icon, version, &mut out).ok()?;
             out.write_var_int(&payload.get_var_int().ok()?).ok()?;
             let flags = payload.get_i32_be().ok()?;
@@ -137,9 +130,7 @@ mod tests {
             assert!(!same_icon.is_empty());
             let packet = CUpdateAdvancements::new(true, same_icon, Vec::new(), Vec::new(), true);
             let mut payload = Vec::new();
-            packet
-                .write_packet_data(&mut payload, &pumpkin_data::packet::CURRENT_MC_VERSION)
-                .unwrap();
+            packet.write_packet_data(&mut payload).unwrap();
             let mut expected = Vec::new();
             packet.write_legacy(&mut expected, &version).unwrap();
             let out = update_advancements_from_current(&payload, version).unwrap();
@@ -147,9 +138,7 @@ mod tests {
 
             let packet = CUpdateAdvancements::new(true, all.to_vec(), Vec::new(), Vec::new(), true);
             let mut payload = Vec::new();
-            packet
-                .write_packet_data(&mut payload, &pumpkin_data::packet::CURRENT_MC_VERSION)
-                .unwrap();
+            packet.write_packet_data(&mut payload).unwrap();
             assert!(update_advancements_from_current(&payload, version).is_some());
         }
     }
