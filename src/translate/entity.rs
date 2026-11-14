@@ -1,20 +1,20 @@
 //! Entity spawning: ADD_ENTITY.
 
+use crate::legacy::{LegacyPacket, LegacyWrite};
 use pumpkin_data::entity::EntityType;
-use pumpkin_protocol::java::legacy::{LegacyPacket, LegacyWrite};
 use pumpkin_protocol::{VarInt, java::client::play::CSpawnEntity};
 use pumpkin_util::{math::position::BlockPos, version::JavaMinecraftVersion};
 
+use crate::legacy::ids;
+use crate::legacy::removed::{
+    spawn_living_entity::CSpawnLivingEntity, spawn_painting::CSpawnPainting,
+};
 use crate::remap::{
     block_state_remap::remap_block_state_for_version,
     entity_id_remap::{remap_entity_id_for_version, remap_object_type_for_version},
     painting_variant_id_remap::remap_motive_id_for_version,
 };
 use crate::translate::entity_data;
-use pumpkin_protocol::java::legacy::ids;
-use pumpkin_protocol::java::legacy::removed::{
-    spawn_living_entity::CSpawnLivingEntity, spawn_painting::CSpawnPainting,
-};
 
 eras! {
     pub enum SpawnFormat {
@@ -48,6 +48,79 @@ pub fn add_entity_from_current(
     let entity_type_id = spawn_entity.r#type.0 as u16;
     entity_data::track_spawn(spawn_entity.entity_id.0, entity_type_id);
     let format = SpawnFormat::of(version);
+
+    if version < JavaMinecraftVersion::V_1_20_2 && entity_type_id == EntityType::PLAYER.id {
+        let id = ids::clientbound::play::SPAWN_PLAYER.to_id(version);
+        if id != -1 {
+            use pumpkin_protocol::ser::NetworkWriteExt;
+            let mut buf = Vec::new();
+            buf.write_var_int(&spawn_entity.entity_id).ok()?;
+            if version <= JavaMinecraftVersion::V_1_7_6 {
+                buf.write_string(&spawn_entity.entity_uuid.hyphenated().to_string())
+                    .ok()?;
+                buf.write_string("Player").ok()?;
+                if version == JavaMinecraftVersion::V_1_7_6 {
+                    buf.write_var_int(&VarInt(0)).ok()?;
+                }
+                buf.write_i32_be((spawn_entity.position.x * 32.0).floor() as i32)
+                    .ok()?;
+                buf.write_i32_be((spawn_entity.position.y * 32.0).floor() as i32)
+                    .ok()?;
+                buf.write_i32_be((spawn_entity.position.z * 32.0).floor() as i32)
+                    .ok()?;
+                buf.write_u8(spawn_entity.yaw).ok()?;
+                buf.write_u8(spawn_entity.pitch).ok()?;
+                buf.write_i16_be(0).ok()?;
+                buf.extend_from_slice(&[0, 0, 127]);
+            } else if version == JavaMinecraftVersion::V_1_8 {
+                buf.write_uuid(&spawn_entity.entity_uuid).ok()?;
+                buf.write_i32_be((spawn_entity.position.x * 32.0).floor() as i32)
+                    .ok()?;
+                buf.write_i32_be((spawn_entity.position.y * 32.0).floor() as i32)
+                    .ok()?;
+                buf.write_i32_be((spawn_entity.position.z * 32.0).floor() as i32)
+                    .ok()?;
+                buf.write_u8(spawn_entity.yaw).ok()?;
+                buf.write_u8(spawn_entity.pitch).ok()?;
+                buf.write_i16_be(0).ok()?;
+                buf.extend_from_slice(&[0, 0, 127]);
+            } else {
+                buf.write_uuid(&spawn_entity.entity_uuid).ok()?;
+                buf.write_f64_be(spawn_entity.position.x).ok()?;
+                buf.write_f64_be(spawn_entity.position.y).ok()?;
+                buf.write_f64_be(spawn_entity.position.z).ok()?;
+                buf.write_u8(spawn_entity.yaw).ok()?;
+                buf.write_u8(spawn_entity.pitch).ok()?;
+                if version < JavaMinecraftVersion::V_1_15 {
+                    buf.write_u8(0xFF).ok()?;
+                }
+            }
+            return Some((id, buf));
+        }
+    }
+
+    if version < JavaMinecraftVersion::V_1_21_5 && entity_type_id == EntityType::EXPERIENCE_ORB.id {
+        let id = ids::clientbound::play::SPAWN_EXPERIENCE_ORB.to_id(version);
+        if id != -1 {
+            use pumpkin_protocol::ser::NetworkWriteExt;
+            let mut buf = Vec::new();
+            buf.write_var_int(&spawn_entity.entity_id).ok()?;
+            if version < JavaMinecraftVersion::V_1_9 {
+                buf.write_i32_be((spawn_entity.position.x * 32.0).floor() as i32)
+                    .ok()?;
+                buf.write_i32_be((spawn_entity.position.y * 32.0).floor() as i32)
+                    .ok()?;
+                buf.write_i32_be((spawn_entity.position.z * 32.0).floor() as i32)
+                    .ok()?;
+            } else {
+                buf.write_f64_be(spawn_entity.position.x).ok()?;
+                buf.write_f64_be(spawn_entity.position.y).ok()?;
+                buf.write_f64_be(spawn_entity.position.z).ok()?;
+            }
+            buf.write_i16_be((spawn_entity.data.0.max(1)) as i16).ok()?;
+            return Some((id, buf));
+        }
+    }
 
     if format < SpawnFormat::V1_19 && entity_type_id == EntityType::PAINTING.id {
         let painting = CSpawnPainting::new(

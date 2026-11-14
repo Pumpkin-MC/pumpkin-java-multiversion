@@ -14,11 +14,11 @@ use super::{
     ceil_log2,
     nbt::{split_network_nbt, write_network_nbt},
 };
+use crate::legacy::block_pos_to_version;
 use crate::remap::{
     block_entity_type_id_remap::remap_block_entity_type_id_for_version,
     block_state_remap::remap_block_state_for_version,
 };
-use pumpkin_protocol::java::legacy::block_pos_to_version;
 
 #[must_use]
 pub fn remap_state(id: u32, version: JavaMinecraftVersion) -> u32 {
@@ -53,13 +53,27 @@ pub fn block_update_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    let position = payload.get_i64_be().ok()?;
+    let raw_pos = payload.get_i64_be().ok()?;
+    let pos_bytes = raw_pos.to_be_bytes();
+    let mut pos_slice = pos_bytes.as_slice();
+    let pos = pos_slice.get_block_pos().ok()?;
+    if version < JavaMinecraftVersion::V_1_18 && !(0..256).contains(&pos.0.y) {
+        return None;
+    }
     let state = payload.get_var_int().ok()?.0 as u32;
+    let remapped = remap_state(state, version);
     let mut out = Vec::new();
-    out.write_i64_be(block_pos_to_version(position, &version))
-        .ok()?;
-    out.write_var_int(&VarInt(remap_state(state, version) as i32))
-        .ok()?;
+    if version <= JavaMinecraftVersion::V_1_7_6 {
+        out.write_i32_be(pos.0.x).ok()?;
+        out.write_u8(pos.0.y as u8).ok()?;
+        out.write_i32_be(pos.0.z).ok()?;
+        out.write_var_int(&VarInt((remapped >> 4) as i32)).ok()?;
+        out.write_u8((remapped & 0xF) as u8).ok()?;
+    } else {
+        out.write_i64_be(block_pos_to_version(raw_pos, &version))
+            .ok()?;
+        out.write_var_int(&VarInt(remapped as i32)).ok()?;
+    }
     Some(out)
 }
 

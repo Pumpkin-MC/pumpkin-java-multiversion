@@ -104,8 +104,8 @@ pub fn set_player_team_from_current(
 #[cfg(test)]
 mod tests {
 
+    use crate::legacy::LegacyWrite;
     use pumpkin_protocol::ClientPacket;
-    use pumpkin_protocol::java::legacy::LegacyWrite;
     use pumpkin_util::text::TextComponent;
 
     use super::*;

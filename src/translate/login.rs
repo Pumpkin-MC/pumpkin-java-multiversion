@@ -1,6 +1,6 @@
 //! Login state: HELLO, KEY and LOGIN_FINISHED.
 
-use pumpkin_protocol::java::legacy::LegacyRead;
+use crate::legacy::LegacyRead;
 use pumpkin_protocol::{
     ClientPacket, Property,
     java::{client::login::CLoginSuccess, server::login::SEncryptionResponse},
@@ -74,7 +74,7 @@ pub fn login_success_from_current(
 #[cfg(test)]
 mod tests {
     use crate::reference::ReferenceWrite;
-    use pumpkin_plugin_api::events_wit::ConnectionState;
+    use pumpkin_plugin_api::events_wit::JavaConnectionState;
     use pumpkin_protocol::ServerPacket;
     use pumpkin_protocol::{
         VarInt,
@@ -83,8 +83,8 @@ mod tests {
     };
 
     use super::*;
+    use crate::legacy::ids;
     use crate::packet::translator::PacketTranslator;
-    use pumpkin_protocol::java::legacy::ids;
 
     fn key_payload(version: JavaMinecraftVersion, secret: &[u8], token: &[u8]) -> Vec<u8> {
         let packet = SEncryptionResponse {
@@ -98,7 +98,7 @@ mod tests {
 
     fn translate_key(version: JavaMinecraftVersion, payload: &[u8]) -> Option<(i32, Vec<u8>)> {
         PacketTranslator::translate_connection_incoming(
-            ConnectionState::Login,
+            JavaConnectionState::Login,
             ids::serverbound::login::KEY.to_id(version),
             payload,
             version,
@@ -172,7 +172,7 @@ mod tests {
         let mut payload = Vec::new();
         packet.write_packet_data(&mut payload).unwrap();
         let (id, out) = PacketTranslator::translate_connection_outgoing(
-            ConnectionState::Login,
+            JavaConnectionState::Login,
             ids::clientbound::login::HELLO.current(),
             &payload,
             JavaMinecraftVersion::V_1_7_6,

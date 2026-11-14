@@ -10,7 +10,7 @@ use pumpkin_protocol::{
 use pumpkin_util::version::JavaMinecraftVersion;
 
 use super::ReferenceWrite;
-use pumpkin_protocol::java::legacy::LegacyWriteExt;
+use crate::legacy::LegacyWriteExt;
 
 impl ReferenceWrite for CUpdateAdvancements {
     fn write_legacy(

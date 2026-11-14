@@ -1,6 +1,6 @@
 //! Synced registries of older clients. Core only knows 26.3's.
 
-use pumpkin_protocol::java::legacy::LegacyRegistryNbt;
+use crate::legacy::LegacyRegistryNbt;
 use pumpkin_protocol::{
     VarInt,
     ser::{NetworkReadSliceExt, NetworkWriteExt},
@@ -198,6 +198,12 @@ pub fn id_remap(registry: &str, version: JavaMinecraftVersion, fallback: &str) -
 pub fn missing_tags(
     version: JavaMinecraftVersion,
 ) -> &'static [(&'static str, &'static str, &'static [&'static str])] {
+    if version < JavaMinecraftVersion::V_1_20 {
+        return MISSING_TAGS_1_20;
+    }
+    if version == JavaMinecraftVersion::V_1_20 {
+        return MISSING_TAGS_1_20_2;
+    }
     use DatapackVersion as D;
     match DatapackVersion::of(version) {
         D::V1_20_2 => MISSING_TAGS_1_20_2,

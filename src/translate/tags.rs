@@ -133,6 +133,82 @@ impl IdMap {
     }
 }
 
+const NON_FLAMMABLE_WOOD_BLOCKS: &[&str] = &[
+    "warped_stem",
+    "stripped_warped_stem",
+    "warped_hyphae",
+    "stripped_warped_hyphae",
+    "crimson_stem",
+    "stripped_crimson_stem",
+    "crimson_hyphae",
+    "stripped_crimson_hyphae",
+    "crimson_planks",
+    "warped_planks",
+    "crimson_slab",
+    "warped_slab",
+    "crimson_pressure_plate",
+    "warped_pressure_plate",
+    "crimson_fence",
+    "warped_fence",
+    "crimson_trapdoor",
+    "warped_trapdoor",
+    "crimson_fence_gate",
+    "warped_fence_gate",
+    "crimson_stairs",
+    "warped_stairs",
+    "crimson_button",
+    "warped_button",
+    "crimson_door",
+    "warped_door",
+    "crimson_sign",
+    "warped_sign",
+    "crimson_wall_sign",
+    "warped_wall_sign",
+];
+
+const DIRT_LIKE_BLOCKS: &[&str] = &["dirt", "grass_block", "podzol", "coarse_dirt", "mycelium"];
+
+/// ViaBackwards `TagRewriter` tag renames for pre-1.19 clients.
+fn rename_tag(key: RegistryKey, tag: &str, version: JavaMinecraftVersion) -> &str {
+    if version < JavaMinecraftVersion::V_1_19 {
+        match (key, tag) {
+            (RegistryKey::Block | RegistryKey::Item, "minecraft:wool_carpets") => {
+                return "minecraft:carpets";
+            }
+            (RegistryKey::Item, "minecraft:dampens_vibrations") => {
+                return "minecraft:occludes_vibration_signals";
+            }
+            (RegistryKey::Block, "minecraft:polar_bears_spawnable_on_alternate") => {
+                return "minecraft:polar_bears_spawnable_on_in_frozen_ocean";
+            }
+            _ => {}
+        }
+    }
+    if version < JavaMinecraftVersion::V_1_18
+        && key == RegistryKey::Block
+        && tag == "minecraft:lava_pool_stone_cannot_replace"
+    {
+        return "minecraft:lava_pool_stone_replaceables";
+    }
+    tag
+}
+
+fn pre_1_19_missing_tags(
+    key: RegistryKey,
+    version: JavaMinecraftVersion,
+) -> Vec<(&'static str, &'static [&'static str])> {
+    let mut out = Vec::new();
+    if key == RegistryKey::Block {
+        if version < JavaMinecraftVersion::V_1_19 {
+            out.push(("minecraft:non_flammable_wood", NON_FLAMMABLE_WOOD_BLOCKS));
+        }
+        if version < JavaMinecraftVersion::V_1_15 {
+            out.push(("minecraft:dirt_like", DIRT_LIKE_BLOCKS));
+        }
+    }
+    out
+}
+
 /// Keeps the registries the client knows, with the entries as the client's ids (ViaBackwards
 /// `TagRewriter`). Blocks the client lacks become their substitute, other missing entries are
 /// dropped. Tags of the client's version that 26.3 no longer has are added back.
@@ -160,17 +236,22 @@ pub fn update_tags_from_current(
 
         let ids = IdMap::new(key, version);
         let registry = key.identifier_string();
+        let tags = tags
+            .into_iter()
+            .map(|(tag, entries)| (rename_tag(key, tag, version), entries));
         let missing = missing_tags(version)
             .iter()
             .filter(|(missing_registry, _, _)| *missing_registry == registry)
-            .map(|(_, tag, names)| {
+            .map(|(_, tag, names)| (*tag, *names))
+            .chain(pre_1_19_missing_tags(key, version))
+            .map(|(tag, names)| {
                 let entries = names
                     .iter()
                     .filter_map(|name| IdMap::current_id(key, name))
                     .collect();
-                (*tag, entries)
+                (tag, entries)
             });
-        let tags: Vec<_> = tags.into_iter().chain(missing).collect();
+        let tags: Vec<_> = tags.chain(missing).collect();
 
         kept += 1;
         body.write_string(name).ok()?;

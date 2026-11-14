@@ -42,9 +42,9 @@ pub fn update_attributes_from_current(
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
     use pumpkin_protocol::ClientPacket;
     use pumpkin_protocol::java::client::play::Property;
-    use pumpkin_protocol::java::legacy::LegacyWrite;
 
     use super::*;
 

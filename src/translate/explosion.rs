@@ -105,9 +105,9 @@ pub fn explode_from_current(mut payload: &[u8], version: JavaMinecraftVersion) -
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
     use pumpkin_data::particle::Particle;
     use pumpkin_protocol::ClientPacket;
-    use pumpkin_protocol::java::legacy::LegacyWrite;
 
     use crate::remap::{
         particle_id_remap::remap_particle_id_for_version,

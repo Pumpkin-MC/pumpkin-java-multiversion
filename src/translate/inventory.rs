@@ -1,12 +1,12 @@
 //! Inventory items: container content and slots, cursor, player inventory, equipment, and the
 //! creative slots and clicks sent back.
 
+use crate::legacy::{LegacyReadExt, LegacyWriteExt};
 use pumpkin_data::{
     block_properties::BLOCK_ENTITY_TYPES, data_component::DataComponent, entity::EntityType,
     item_stack::ItemStack,
 };
 use pumpkin_nbt::tag::NbtTag;
-use pumpkin_protocol::java::legacy::{LegacyReadExt, LegacyWriteExt};
 use pumpkin_protocol::{
     VarInt,
     codec::{data_component::deserialize, item_stack_seralizer::ItemStackSerializer},
@@ -14,6 +14,7 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::version::JavaMinecraftVersion;
 
+use crate::legacy::slot_to_version;
 use crate::remap::{
     data_component_type_id_remap::remap_data_component_type_id_from_version,
     item_id_remap::remap_item_id_from_version,
@@ -22,7 +23,6 @@ use crate::translate::{
     item::{CustomModelDataFormat, ItemFormat, NestedItemFormat, write_item_for_version},
     nbt::skip_client_nbt,
 };
-use pumpkin_protocol::java::legacy::slot_to_version;
 
 eras! {
     pub enum ContainerFormat {
@@ -192,17 +192,25 @@ pub fn container_set_content_from_current(
     let state_id = payload.get_var_int().ok()?;
     let count = payload.get_var_int().ok()?;
 
+    // Player inventory (window 0) had 45 slots before 1.9 (no offhand slot 45).
+    let drop_offhand =
+        version < JavaMinecraftVersion::V_1_9 && container_id.0 == 0 && count.0 == 46;
+    let written_count = if drop_offhand { 45 } else { count.0 };
+
     let mut out = Vec::with_capacity(payload.len());
     out.write_container_id_legacy(&container_id, &version)
         .ok()?;
     if format >= ContainerFormat::V1_17_1 {
         out.write_var_int(&state_id).ok()?;
-        out.write_var_int(&count).ok()?;
+        out.write_var_int(&VarInt(written_count)).ok()?;
     } else {
-        out.write_i16_be(i16::try_from(count.0).ok()?).ok()?;
+        out.write_i16_be(i16::try_from(written_count).ok()?).ok()?;
     }
-    for _ in 0..count.0 {
+    for _ in 0..written_count {
         write_item(&mut payload, version, &mut out)?;
+    }
+    if drop_offhand {
+        read_item(&mut payload)?;
     }
     if format >= ContainerFormat::V1_17_1 {
         write_item(&mut payload, version, &mut out)?;
@@ -218,6 +226,9 @@ pub fn container_set_slot_from_current(
     let container_id = payload.get_container_id().ok()?;
     let state_id = payload.get_var_int().ok()?;
     let slot = payload.get_i16_be().ok()?;
+    if version < JavaMinecraftVersion::V_1_9 && container_id.0 == 0 && slot == 45 {
+        return None;
+    }
 
     let mut out = Vec::new();
     out.write_container_id_legacy(&container_id, &version)
@@ -230,28 +241,88 @@ pub fn container_set_slot_from_current(
     Some(out)
 }
 
-/// SET_CURSOR_ITEM.
-pub fn set_cursor_item_from_current(
+/// SET_CURSOR_ITEM (`CONTAINER_SET_SLOT` window -1, slot -1 before 1.21.2).
+pub fn set_cursor_item_packet_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
-) -> Option<Vec<u8>> {
+) -> Option<(i32, Vec<u8>)> {
+    if version >= JavaMinecraftVersion::V_1_21_2 {
+        let id = crate::legacy::ids::clientbound::play::SET_CURSOR_ITEM.to_id(version);
+        let mut out = Vec::new();
+        write_item(&mut payload, version, &mut out)?;
+        return (id != -1).then_some((id, out));
+    }
+    let id = crate::legacy::ids::clientbound::play::CONTAINER_SET_SLOT.to_id(version);
+    if id == -1 {
+        return None;
+    }
     let mut out = Vec::new();
+    out.write_u8(0xFF).ok()?; // window -1
+    if ContainerFormat::of(version) >= ContainerFormat::V1_17_1 {
+        out.write_var_int(&VarInt(0)).ok()?;
+    }
+    out.write_i16_be(-1).ok()?;
     write_item(&mut payload, version, &mut out)?;
-    Some(out)
+    Some((id, out))
 }
 
-/// SET_PLAYER_INVENTORY.
-pub fn set_player_inventory_from_current(
+/// SET_PLAYER_INVENTORY (`CONTAINER_SET_SLOT` before 1.21.2).
+pub fn set_player_inventory_packet_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
-) -> Option<Vec<u8>> {
+) -> Option<(i32, Vec<u8>)> {
+    if version >= JavaMinecraftVersion::V_1_21_2 {
+        let id = crate::legacy::ids::clientbound::play::SET_PLAYER_INVENTORY.to_id(version);
+        let mut out = Vec::new();
+        out.write_var_int(&payload.get_var_int().ok()?).ok()?;
+        write_item(&mut payload, version, &mut out)?;
+        return (id != -1).then_some((id, out));
+    }
+    let inv_slot = payload.get_var_int().ok()?.0;
+    if !(0..=40).contains(&inv_slot) {
+        return None;
+    }
+    let id = crate::legacy::ids::clientbound::play::CONTAINER_SET_SLOT.to_id(version);
+    if id == -1 {
+        return None;
+    }
     let mut out = Vec::new();
-    out.write_var_int(&payload.get_var_int().ok()?).ok()?;
+    if version < JavaMinecraftVersion::V_1_9 {
+        let container_slot = match inv_slot {
+            0..=8 => inv_slot + 36,
+            9..=35 => inv_slot,
+            36..=39 => 8 - (inv_slot - 36),
+            _ => return None, // no offhand before 1.9
+        };
+        out.write_u8(0).ok()?;
+        out.write_i16_be(container_slot as i16).ok()?;
+    } else {
+        out.write_u8(0xFE).ok()?; // window -2 (direct player inventory)
+        if ContainerFormat::of(version) >= ContainerFormat::V1_17_1 {
+            out.write_var_int(&VarInt(0)).ok()?;
+        }
+        out.write_i16_be(inv_slot as i16).ok()?;
+    }
     write_item(&mut payload, version, &mut out)?;
-    Some(out)
+    Some((id, out))
 }
 
-/// SET_EQUIPMENT. Clients before 1.16 get the first slot only.
+fn valid_equipment_slot(slot: i8, version: JavaMinecraftVersion) -> bool {
+    if slot < 0 {
+        return false;
+    }
+    if version < JavaMinecraftVersion::V_1_9 {
+        matches!(slot, 0 | 2..=5)
+    } else if version < JavaMinecraftVersion::V_1_20_5 {
+        slot <= 5
+    } else if version < JavaMinecraftVersion::V_1_21_5 {
+        slot <= 6
+    } else {
+        slot <= 7
+    }
+}
+
+/// SET_EQUIPMENT. Clients before 1.16 get the first valid slot only.
 pub fn set_equipment_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
@@ -259,30 +330,45 @@ pub fn set_equipment_from_current(
     let format = EquipmentFormat::of(version);
     let entity_id = payload.get_var_int().ok()?;
 
+    let mut entries = Vec::new();
+    loop {
+        let raw_slot = payload.get_u8().ok()?;
+        let more = raw_slot & 0x80 != 0;
+        let slot = (raw_slot & 0x7F) as i8;
+        let item = read_item(&mut payload)?;
+        if valid_equipment_slot(slot, version) {
+            entries.push((slot, item));
+        }
+        if !more {
+            break;
+        }
+    }
+    if entries.is_empty() {
+        return None;
+    }
+
     let mut out = Vec::new();
     if format == EquipmentFormat::V1_7 {
         out.write_i32_be(entity_id.0).ok()?;
     } else {
         out.write_var_int(&entity_id).ok()?;
     }
-    loop {
-        let slot = payload.get_u8().ok()?;
-        let more = slot & 0x80 != 0;
-        let slot = (slot & 0x7F) as i8;
-        if format == EquipmentFormat::V1_16 {
-            out.write_i8(if more { slot | i8::MIN } else { slot })
-                .ok()?;
+    if format < EquipmentFormat::V1_16 {
+        let (slot, item) = &entries[0];
+        let mapped = slot_to_version(*slot, &version);
+        if format == EquipmentFormat::V1_9 {
+            out.write_var_int(&VarInt(i32::from(mapped))).ok()?;
         } else {
-            let slot = slot_to_version(slot, &version);
-            if format == EquipmentFormat::V1_9 {
-                out.write_var_int(&VarInt(i32::from(slot))).ok()?;
-            } else {
-                out.write_i16_be(i16::from(slot)).ok()?;
-            }
+            out.write_i16_be(i16::from(mapped)).ok()?;
         }
-        write_item(&mut payload, version, &mut out)?;
-        if !more || format < EquipmentFormat::V1_16 {
-            break;
+        write_item_for_version(item, version, &mut out).ok()?;
+    } else {
+        let last = entries.len() - 1;
+        for (i, (slot, item)) in entries.iter().enumerate() {
+            let more = i < last;
+            out.write_i8(if more { *slot | i8::MIN } else { *slot })
+                .ok()?;
+            write_item_for_version(item, version, &mut out).ok()?;
         }
     }
     Some(out)

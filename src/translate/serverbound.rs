@@ -1,14 +1,20 @@
 //! Serverbound play packets from older clients to 26.3.
 
-use pumpkin_protocol::java::legacy::{LegacyRead, block_pos_to_current};
+use crate::legacy::{LegacyRead, LegacyReadExt, block_pos_to_current};
 use pumpkin_protocol::{
     ClientPacket, VarInt,
-    java::server::play::{ActionType, SInteract},
+    java::server::play::{
+        ActionType, SChatMessage, SClientInformationPlay, SInteract, SKeepAlive, SPlayerAbilities,
+        SPlayerPosition, SPlayerPositionRotation, SUseItemOn,
+    },
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},
 };
-use pumpkin_util::version::JavaMinecraftVersion;
+use pumpkin_util::{
+    math::{position::BlockPos, vector3::Vector3},
+    version::JavaMinecraftVersion,
+};
 
-use pumpkin_protocol::java::legacy::ids::serverbound::play;
+use crate::legacy::ids::serverbound::play;
 
 eras! {
     enum UseItemFormat {
@@ -179,6 +185,82 @@ pub fn player_command_to_current(
     }
 }
 
+/// `CLIENT_COMMAND`: drops legacy `OPEN_INVENTORY_ACHIEVEMENT` (`2` before 1.16) so 26.3 does
+/// not interpret it as `REQUEST_GAMERULE_VALUES`, and converts 1.7 `u8` action IDs.
+pub fn client_command_to_current(
+    mut payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<(i32, Vec<u8>)> {
+    let action_id = if version <= JavaMinecraftVersion::V_1_7_6 {
+        i32::from(payload.get_u8().ok()?)
+    } else {
+        payload.get_var_int().ok()?.0
+    };
+    if action_id == 2 && version < JavaMinecraftVersion::V_1_16 {
+        return None;
+    }
+    let mut out = Vec::new();
+    out.write_var_int(&VarInt(action_id)).ok()?;
+    Some((play::CLIENT_COMMAND.current(), out))
+}
+
+/// `USE_ITEM_ON`: converts 1.7-1.8 air right-clicks (`face == 255`) into `USE_ITEM`, and
+/// translates pre-1.21.2 block placement layouts.
+pub fn use_item_on_to_current(
+    mut payload: &[u8],
+    version: JavaMinecraftVersion,
+    rotation: impl FnOnce() -> (f32, f32),
+) -> Option<(i32, Vec<u8>)> {
+    if version >= JavaMinecraftVersion::V_1_21_2 {
+        return Some((play::USE_ITEM_ON.current(), payload.to_vec()));
+    }
+    if version >= JavaMinecraftVersion::V_1_9 {
+        let packet = SUseItemOn::read_legacy(&mut payload, &version).ok()?;
+        let mut out = Vec::new();
+        packet.write_packet_data(&mut out).ok()?;
+        return Some((play::USE_ITEM_ON.current(), out));
+    }
+
+    let position = if version <= JavaMinecraftVersion::V_1_7_6 {
+        let x = payload.get_i32_be().ok()?;
+        let y = i32::from(payload.get_u8().ok()?);
+        let z = payload.get_i32_be().ok()?;
+        BlockPos::new(x, y, z)
+    } else {
+        payload.get_block_pos_legacy(&version).ok()?
+    };
+    let face = payload.get_u8().ok()?;
+    if face == 255 {
+        let (yaw, pitch) = rotation();
+        let mut out = Vec::new();
+        out.write_var_int(&VarInt(0)).ok()?;
+        out.write_var_int(&VarInt(0)).ok()?;
+        out.write_f32_be(yaw).ok()?;
+        out.write_f32_be(pitch).ok()?;
+        return Some((play::USE_ITEM.current(), out));
+    }
+    if payload.len() < 3 {
+        return None;
+    }
+    let c = &payload[payload.len() - 3..];
+    let packet = SUseItemOn {
+        hand: VarInt(0),
+        position,
+        face: VarInt(i32::from(face)),
+        cursor_pos: Vector3::new(
+            f32::from(c[0]) / 16.0,
+            f32::from(c[1]) / 16.0,
+            f32::from(c[2]) / 16.0,
+        ),
+        inside_block: false,
+        is_against_world_border: false,
+        sequence: VarInt(0),
+    };
+    let mut out = Vec::new();
+    packet.write_packet_data(&mut out).ok()?;
+    Some((play::USE_ITEM_ON.current(), out))
+}
+
 /// `None` when the payload is already in the 26.3 format. Only called for clients below 26.3.
 /// `rotation` is the player's yaw and pitch, for packets that did not carry them yet.
 #[expect(clippy::too_many_lines)]
@@ -191,6 +273,84 @@ pub fn play_to_current(
     // PUNCH / SWING (26.3 punch has 0 bytes)
     if new_id == play::PUNCH.current() {
         return Some(Vec::new());
+    }
+
+    if new_id == play::CUSTOM_PAYLOAD.current() && version < JavaMinecraftVersion::V_1_13 {
+        return super::plugin_message::to_current(payload, version);
+    }
+
+    if new_id == play::KEEP_ALIVE.current() && version < JavaMinecraftVersion::V_1_12_2 {
+        let pkt = SKeepAlive::read_legacy(&mut payload, &version).ok()?;
+        let mut out = Vec::new();
+        pkt.write_packet_data(&mut out).ok()?;
+        return Some(out);
+    }
+
+    if new_id == play::CLIENT_INFORMATION.current() && version < JavaMinecraftVersion::V_1_18 {
+        let pkt = if version <= JavaMinecraftVersion::V_1_7_6 {
+            let locale = payload.get_str_borrowed().ok()?;
+            let view_distance = payload.get_i8().ok()?;
+            let chat_mode = VarInt(i32::from(payload.get_i8().ok()?));
+            let chat_colors = payload.get_bool().ok()?;
+            let _difficulty = payload.get_u8().ok()?;
+            let show_cape = payload.get_bool().ok()?;
+            SClientInformationPlay {
+                locale,
+                view_distance,
+                chat_mode,
+                chat_colors,
+                skin_parts: u8::from(show_cape),
+                main_hand: VarInt(1),
+                text_filtering: false,
+                server_listing: true,
+            }
+        } else {
+            SClientInformationPlay::read_legacy(&mut payload, &version).ok()?
+        };
+        let mut out = Vec::new();
+        pkt.write_packet_data(&mut out).ok()?;
+        return Some(out);
+    }
+
+    if new_id == play::MOVE_PLAYER_POS.current() && version <= JavaMinecraftVersion::V_1_7_6 {
+        let pkt = SPlayerPosition::read_legacy(&mut payload, &version).ok()?;
+        let mut out = Vec::new();
+        pkt.write_packet_data(&mut out).ok()?;
+        return Some(out);
+    }
+
+    if new_id == play::MOVE_PLAYER_POS_ROT.current() && version <= JavaMinecraftVersion::V_1_7_6 {
+        let pkt = SPlayerPositionRotation::read_legacy(&mut payload, &version).ok()?;
+        let mut out = Vec::new();
+        pkt.write_packet_data(&mut out).ok()?;
+        return Some(out);
+    }
+
+    if new_id == play::PLAYER_ABILITIES.current() && version < JavaMinecraftVersion::V_1_16 {
+        let pkt = SPlayerAbilities::read_legacy(&mut payload, &version).ok()?;
+        let mut out = Vec::new();
+        pkt.write_packet_data(&mut out).ok()?;
+        return Some(out);
+    }
+
+    if new_id == play::CHAT.current() && version < JavaMinecraftVersion::V_1_21_5 {
+        let pkt = if version < JavaMinecraftVersion::V_1_19_3 {
+            let message = payload.get_str_borrowed().ok()?;
+            SChatMessage {
+                message,
+                timestamp: 0,
+                salt: 0,
+                signature: None,
+                message_count: VarInt(0),
+                acknowledged: &[0; 3],
+                checksum: 0,
+            }
+        } else {
+            SChatMessage::read_legacy(&mut payload, &version).ok()?
+        };
+        let mut out = Vec::new();
+        pkt.write_packet_data(&mut out).ok()?;
+        return Some(out);
     }
 
     // ACCEPT_TELEPORTATION (only teleport_id: VarInt before 26.3)
@@ -226,7 +386,16 @@ pub fn play_to_current(
 
     // SIGN_UPDATE (26.3 moved the front flag after the lines as a var int)
     if new_id == play::SIGN_UPDATE.current() {
-        let pos_val = block_pos_to_current(payload.get_i64_be().ok()?, &version);
+        let mut out = Vec::new();
+        if version <= JavaMinecraftVersion::V_1_7_6 {
+            let x = payload.get_i32_be().ok()?;
+            let y = i32::from(payload.get_i16_be().ok()?);
+            let z = payload.get_i32_be().ok()?;
+            let _ = out.write_block_pos(&BlockPos::new(x, y, z));
+        } else {
+            let pos_val = block_pos_to_current(payload.get_i64_be().ok()?, &version);
+            let _ = out.write_i64_be(pos_val);
+        }
         let is_front = if SignFormat::of(version) == SignFormat::V1_20 {
             payload.get_bool().unwrap_or(true)
         } else {
@@ -236,8 +405,6 @@ pub fn play_to_current(
         let line2 = payload.get_str_borrowed().unwrap_or("");
         let line3 = payload.get_str_borrowed().unwrap_or("");
         let line4 = payload.get_str_borrowed().unwrap_or("");
-        let mut out = Vec::new();
-        let _ = out.write_i64_be(pos_val);
         let _ = out.write_string(line1);
         let _ = out.write_string(line2);
         let _ = out.write_string(line3);
@@ -254,7 +421,17 @@ pub fn play_to_current(
         } else {
             VarInt(i32::from(payload.get_u8().ok()?))
         };
-        let pos_val = block_pos_to_current(payload.get_i64_be().ok()?, &version);
+        let pos_bytes = if version <= JavaMinecraftVersion::V_1_7_6 {
+            let x = payload.get_i32_be().ok()?;
+            let y = i32::from(payload.get_u8().ok()?);
+            let z = payload.get_i32_be().ok()?;
+            let mut b = Vec::with_capacity(8);
+            b.write_block_pos(&BlockPos::new(x, y, z)).ok()?;
+            b
+        } else {
+            let pos_val = block_pos_to_current(payload.get_i64_be().ok()?, &version);
+            pos_val.to_be_bytes().to_vec()
+        };
         let face = payload.get_u8().ok()?;
         let sequence = if format == PlayerActionFormat::V1_19 {
             payload.get_var_int().unwrap_or(VarInt(0))
@@ -268,7 +445,7 @@ pub fn play_to_current(
         };
         let mut out = Vec::new();
         let _ = out.write_var_int(&new_status);
-        let _ = out.write_i64_be(pos_val);
+        out.extend_from_slice(&pos_bytes);
         let _ = out.write_u8(face);
         let _ = out.write_var_int(&sequence);
         return Some(out);

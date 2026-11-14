@@ -1,6 +1,6 @@
 //! Entity animations: ANIMATE and SWING_ANIMATION.
 
-use pumpkin_protocol::java::legacy::LegacyPacket;
+use crate::legacy::LegacyPacket;
 use pumpkin_protocol::{
     VarInt,
     java::client::play::CSwingArm,

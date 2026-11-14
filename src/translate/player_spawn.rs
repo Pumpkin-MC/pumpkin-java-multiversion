@@ -1,7 +1,7 @@
 //! Player spawn info: play LOGIN, RESPAWN and SET_DEFAULT_SPAWN_POSITION.
 
+use crate::legacy::LegacyWriteWith;
 use pumpkin_data::entity::EntityType;
-use pumpkin_protocol::java::legacy::LegacyWriteWith;
 use pumpkin_protocol::{
     ServerPacket,
     java::client::play::{CLogin, CPlayerSpawnPosition, CRespawn, PlayerSpawnData},
@@ -81,9 +81,9 @@ pub fn spawn_position_from_current(
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
     use pumpkin_protocol::ClientPacket;
     use pumpkin_protocol::VarInt;
-    use pumpkin_protocol::java::legacy::LegacyWrite;
 
     use super::*;
 

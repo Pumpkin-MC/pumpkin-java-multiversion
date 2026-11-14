@@ -199,7 +199,8 @@ impl LegacyArgumentType for ArgumentType {
                 _ => Ok(()),
             }
         } else {
-            let (identifier, is_remapped_to_string) = self.legacy_identifier_name(version);
+            let (identifier, is_remapped_to_string) =
+                LegacyArgumentType::legacy_identifier_name(self, version);
             write.write_string(identifier)?;
             if is_remapped_to_string {
                 let behavior_val = match self {

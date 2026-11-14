@@ -2,7 +2,7 @@
 //! SET_ENTITY_MOTION, PLAYER_ROTATION, PLAYER_POSITION.
 
 use super::legacy_bytes;
-use pumpkin_protocol::java::legacy::LegacyPacket;
+use crate::legacy::LegacyPacket;
 use pumpkin_protocol::{
     codec::lp_vector_3d::LpVector3d,
     java::client::play::{
@@ -59,6 +59,36 @@ pub fn position_sync_from_current(
     ))
 }
 
+/// TELEPORT_ENTITY (vehicle teleport since 1.21.2): drops relative teleports before 1.21.2.
+pub fn teleport_entity_from_current(
+    mut payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<Vec<u8>> {
+    if version >= JavaMinecraftVersion::V_1_21_2 {
+        return Some(payload.to_vec());
+    }
+    let entity_id = payload.get_var_int().ok()?;
+    let position = Vector3::new(
+        payload.get_f64_be().ok()?,
+        payload.get_f64_be().ok()?,
+        payload.get_f64_be().ok()?,
+    );
+    let delta = Vector3::new(
+        payload.get_f64_be().ok()?,
+        payload.get_f64_be().ok()?,
+        payload.get_f64_be().ok()?,
+    );
+    let yaw = payload.get_f32_be().ok()?;
+    let pitch = payload.get_f32_be().ok()?;
+    let relatives = payload.get_i32_be().ok()?;
+    if relatives != 0 {
+        return None;
+    }
+    let on_ground = payload.get_bool().ok()?;
+    let packet = CEntityPositionSync::new(entity_id, position, delta, yaw, pitch, on_ground);
+    legacy_bytes(&packet, version)
+}
+
 /// SET_ENTITY_MOTION: packed velocity since 1.21.9, three shorts before. Core's writer handles
 /// every older layout.
 pub fn entity_motion_from_current(
@@ -99,10 +129,10 @@ pub fn player_position_from_current(
 
 #[cfg(test)]
 mod tests {
+    use crate::legacy::LegacyWrite;
     use pumpkin_data::packet::CURRENT_MC_VERSION;
     use pumpkin_protocol::ClientPacket;
     use pumpkin_protocol::VarInt;
-    use pumpkin_protocol::java::legacy::LegacyWrite;
     use pumpkin_protocol::ser::NetworkWriteExt;
 
     use super::*;

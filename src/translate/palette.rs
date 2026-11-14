@@ -93,6 +93,77 @@ pub fn translate<F: Fn(u32) -> u32>(
     Some(repacked.len())
 }
 
+/// Unpacks one 26.3 container into `entries` remapped values.
+pub fn unpack<F: Fn(u32) -> u32>(
+    read: &mut &[u8],
+    entries: usize,
+    max_indirect_bits: u8,
+    remap: F,
+) -> Option<Vec<u32>> {
+    let bits = read.get_u8().ok()?;
+    if bits == 0 {
+        let id = remap(read.get_var_int().ok()?.0 as u32);
+        return Some(vec![id; entries]);
+    }
+    let palette = if bits <= max_indirect_bits {
+        Some(
+            read_palette(read)?
+                .into_iter()
+                .map(&remap)
+                .collect::<Vec<_>>(),
+        )
+    } else {
+        None
+    };
+    let longs = (0..long_count(entries, bits))
+        .map(|_| read.get_i64_be().ok())
+        .collect::<Option<Vec<_>>>()?;
+    let per_long = 64 / bits as usize;
+    let mask = (1u64 << bits) - 1;
+    let mut out = Vec::with_capacity(entries);
+    for index in 0..entries {
+        let word = longs.get(index / per_long).copied().unwrap_or(0) as u64;
+        let raw = ((word >> ((index % per_long) * bits as usize)) & mask) as u32;
+        let mapped = match &palette {
+            Some(pal) => pal.get(raw as usize).copied().unwrap_or(0),
+            None => remap(raw),
+        };
+        out.push(mapped);
+    }
+    Some(out)
+}
+
+/// Reads a container, expanding it to one 26.3 id per entry (no remap, nothing written).
+pub fn decode(read: &mut &[u8], entries: usize, max_indirect_bits: u8) -> Option<Vec<u32>> {
+    let bits = read.get_u8().ok()?;
+    if bits == 0 {
+        let id = read.get_var_int().ok()?.0 as u32;
+        return Some(vec![id; entries]);
+    }
+
+    let palette = if bits <= max_indirect_bits {
+        Some(read_palette(read)?)
+    } else {
+        None
+    };
+    let longs = (0..long_count(entries, bits))
+        .map(|_| read.get_i64_be().ok())
+        .collect::<Option<Vec<_>>>()?;
+
+    let per_long = 64 / bits as usize;
+    let mask = (1u64 << bits) - 1;
+    let mut out = Vec::with_capacity(entries);
+    for index in 0..entries {
+        let word = longs[index / per_long] as u64;
+        let value = (word >> ((index % per_long) * bits as usize)) & mask;
+        out.push(match &palette {
+            Some(palette) => *palette.get(value as usize).unwrap_or(&0),
+            None => value as u32,
+        });
+    }
+    Some(out)
+}
+
 fn read_palette(read: &mut &[u8]) -> Option<Vec<u32>> {
     let len = read.get_var_int().ok()?.0;
     let mut palette = Vec::with_capacity(len.max(0) as usize);
@@ -103,7 +174,7 @@ fn read_palette(read: &mut &[u8]) -> Option<Vec<u32>> {
 }
 
 /// Unpacks `entries` values of `from_bits`, maps them and packs them with `to_bits`.
-fn repack(
+pub(crate) fn repack(
     longs: &[i64],
     entries: usize,
     from_bits: u8,

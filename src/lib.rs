@@ -1,3 +1,4 @@
+pub mod legacy;
 pub mod packet;
 #[cfg(test)]
 mod reference;
@@ -10,52 +11,29 @@ use pumpkin_plugin_api::{
     events::{
         EventHandler, EventPriority,
         packet::{
-            ConnectionPacketReceivedEvent, ConnectionPacketSentEvent, PacketReceivedEvent,
+            JavaConnectionPacketReceivedEvent, JavaConnectionPacketSentEvent, PacketReceivedEvent,
             PacketSentEvent,
         },
         player::player_leave::PlayerLeaveEvent,
     },
     events_wit::{
-        ConnectionPacketReceivedEventData, ConnectionPacketSentEventData, JavaConnectionFeatures,
+        JavaConnectionPacketReceivedEventData, JavaConnectionPacketSentEventData,
         PacketReceivedEventData, PacketSentEventData, PlayerLeaveEventData, RawPacket,
     },
     player::Player,
     register_plugin,
 };
 
+use crate::legacy::ids;
 use crate::packet::translator::{PacketTranslator, from_wasm_java_version, to_wasm_java_version};
-use crate::translate::{entity_data, tags};
+use crate::translate::{chunk, entity_data, tags};
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_protocol::java::legacy::ids;
 use pumpkin_util::version::JavaMinecraftVersion;
 
-/// What the client's protocol has beyond the packet format.
-fn connection_features(version: JavaMinecraftVersion) -> JavaConnectionFeatures {
-    [
-        (
-            version >= JavaMinecraftVersion::V_1_20_2,
-            JavaConnectionFeatures::CONFIGURATION_STATE | JavaConnectionFeatures::CHUNK_BATCH_ACKS,
-        ),
-        (
-            version >= JavaMinecraftVersion::V_1_21_4,
-            JavaConnectionFeatures::PLAYER_LOADED,
-        ),
-        (
-            (JavaMinecraftVersion::V_1_19..JavaMinecraftVersion::V_1_19_3).contains(&version),
-            JavaConnectionFeatures::OPTIONAL_VERIFY_TOKEN,
-        ),
-    ]
-    .into_iter()
-    .filter(|(has, _)| *has)
-    .fold(JavaConnectionFeatures::empty(), |features, (_, flags)| {
-        features | flags
-    })
-}
-
 /// Oldest client with chunks, player info and entity data translated.
-const OLDEST_SUPPORTED: JavaMinecraftVersion = JavaMinecraftVersion::V_1_21;
+const OLDEST_SUPPORTED: JavaMinecraftVersion = JavaMinecraftVersion::V_1_7_2;
 
-/// The multi-version plugin allowing Minecraft Java clients across versions (1.21 - 26.2)
+/// The multi-version plugin allowing Minecraft Java clients across versions (1.7.2 - 26.2)
 /// to connect to a Pumpkin 26.3 server.
 pub struct MultiVersionPlugin;
 
@@ -93,11 +71,15 @@ impl Plugin for MultiVersionPlugin {
 
         // Before play (status / login / config) there is no player, only the connection.
         context.register_event_handler(
-            ConnectionPacketReceivedHandler,
+            JavaConnectionPacketReceivedHandler,
             EventPriority::Highest,
             true,
         )?;
-        context.register_event_handler(ConnectionPacketSentHandler, EventPriority::Lowest, true)?;
+        context.register_event_handler(
+            JavaConnectionPacketSentHandler,
+            EventPriority::Lowest,
+            true,
+        )?;
 
         context.register_event_handler(PlayerLeaveHandler, EventPriority::Lowest, false)?;
 
@@ -159,6 +141,11 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
             if is_join {
                 entity_data::join_viewer(viewer(&event.player));
             }
+            // Versions below 1.18 want light as its own packet; chunk::chunk_from_current only
+            // produces the chunk half, so keep the original payload to build it separately.
+            let chunk_payload = (event.packet_id
+                == ids::clientbound::play::LEVEL_CHUNK_WITH_LIGHT.current())
+            .then(|| event.raw_payload.clone());
             // A current id means a different packet to the client, so drop what has none
             match entity_data::for_viewer(viewer(&event.player), || {
                 PacketTranslator::translate_outgoing_packet(
@@ -183,6 +170,19 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
             {
                 event.extra_packets.push(RawPacket { packet_id, payload });
             }
+            if !event.cancelled
+                && let Some(original) = chunk_payload
+                && let Some(light_payload) = chunk::light_from_current(&original, version)
+                && let Some(packet_id) = PacketTranslator::translate_clientbound_packet_id(
+                    ids::clientbound::play::LIGHT_UPDATE.current(),
+                    version,
+                )
+            {
+                event.extra_packets.push(RawPacket {
+                    packet_id,
+                    payload: light_payload,
+                });
+            }
         }
         event
     }
@@ -205,19 +205,18 @@ impl EventHandler<PlayerLeaveEvent> for PlayerLeaveHandler {
 }
 
 /// Translates incoming pre-play packets from older clients to 26.3.
-struct ConnectionPacketReceivedHandler;
+struct JavaConnectionPacketReceivedHandler;
 
-impl EventHandler<ConnectionPacketReceivedEvent> for ConnectionPacketReceivedHandler {
+impl EventHandler<JavaConnectionPacketReceivedEvent> for JavaConnectionPacketReceivedHandler {
     fn handle(
         &self,
         _server: Server,
-        mut event: ConnectionPacketReceivedEventData,
-    ) -> ConnectionPacketReceivedEventData {
+        mut event: JavaConnectionPacketReceivedEventData,
+    ) -> JavaConnectionPacketReceivedEventData {
         let version = from_wasm_java_version(event.version);
         if version == CURRENT_MC_VERSION {
             return event;
         }
-        event.features = connection_features(version);
         match PacketTranslator::translate_connection_incoming(
             event.state,
             event.packet_id,
@@ -235,14 +234,14 @@ impl EventHandler<ConnectionPacketReceivedEvent> for ConnectionPacketReceivedHan
 }
 
 /// Translates outgoing pre-play 26.3 packets to the client's id and payload.
-struct ConnectionPacketSentHandler;
+struct JavaConnectionPacketSentHandler;
 
-impl EventHandler<ConnectionPacketSentEvent> for ConnectionPacketSentHandler {
+impl EventHandler<JavaConnectionPacketSentEvent> for JavaConnectionPacketSentHandler {
     fn handle(
         &self,
         _server: Server,
-        mut event: ConnectionPacketSentEventData,
-    ) -> ConnectionPacketSentEventData {
+        mut event: JavaConnectionPacketSentEventData,
+    ) -> JavaConnectionPacketSentEventData {
         let version = from_wasm_java_version(event.version);
         if version == CURRENT_MC_VERSION {
             return event;

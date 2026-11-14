@@ -1,16 +1,19 @@
-//! PLAYER_INFO_UPDATE.
+//! PLAYER_INFO_UPDATE and PLAYER_INFO_REMOVE (and pre-1.19.3 PLAYER_INFO).
 
+use crate::legacy::{LegacyWriteExt, ids};
 use pumpkin_protocol::{
-    Property,
+    Property, VarInt,
     java::client::play::{CPlayerInfoUpdate, InitChat, Player, PlayerAction, PlayerInfoFlags},
-    ser::{NetworkReadExt, NetworkReadSliceExt, ReadingError},
+    ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt, ReadingError},
 };
 use pumpkin_util::{text::TextComponent, version::JavaMinecraftVersion};
 
 eras! {
     pub enum PlayerInfoFormat {
-        // TODO: `PLAYER_INFO` before 1.19.3 has another layout; dropped until then
-        PlayerInfo = V_1_7_2,
+        /// Single-entry string + online + i16 ping packet.
+        V1_7 = V_1_7_2,
+        /// Action VarInt (0..=4) + UUID entry list.
+        V1_8 = V_1_8,
         /// Action bit set, which core's writer masks per version.
         V1_19_3 = V_1_19_3,
     }
@@ -148,14 +151,12 @@ fn actions(entry: &Entry) -> Vec<PlayerAction<'_>> {
 }
 
 /// Drops the list order before 1.21.2 and the hat before 1.21.4, display names as JSON
-/// before 1.20.3 (ViaBackwards `Protocol1_21_4To1_21_2` and earlier).
+/// before 1.20.3, and converts to legacy `PLAYER_INFO` before 1.19.3.
 pub fn player_info_update_from_current(
     mut payload: &[u8],
     version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
-    if PlayerInfoFormat::of(version) == PlayerInfoFormat::PlayerInfo {
-        return None;
-    }
+    let format = PlayerInfoFormat::of(version);
     let bits = payload.get_u8().ok()?;
     let flags = PlayerInfoFlags::from_bits_retain(bits);
     let entries = payload
@@ -163,23 +164,161 @@ pub fn player_info_update_from_current(
             read_entry(read, flags).ok_or_else(|| ReadingError::Message("player".into()))
         })
         .ok()?;
-    let actions: Vec<_> = entries.iter().map(actions).collect();
-    let players: Vec<_> = entries
-        .iter()
-        .zip(&actions)
-        .map(|(entry, actions)| Player {
-            uuid: entry.uuid,
-            actions,
-        })
-        .collect();
-    super::legacy_bytes(&CPlayerInfoUpdate::new(bits, &players), version)
+
+    match format {
+        PlayerInfoFormat::V1_19_3 => {
+            let actions: Vec<_> = entries.iter().map(actions).collect();
+            let players: Vec<_> = entries
+                .iter()
+                .zip(&actions)
+                .map(|(entry, actions)| Player {
+                    uuid: entry.uuid,
+                    actions,
+                })
+                .collect();
+            super::legacy_bytes(&CPlayerInfoUpdate::new(bits, &players), version)
+        }
+        PlayerInfoFormat::V1_8 => encode_player_info_v1_8(flags, &entries, version),
+        PlayerInfoFormat::V1_7 => encode_player_info_v1_7(flags, &entries),
+    }
+}
+
+/// Outgoing `PLAYER_INFO_UPDATE` mapped to `(client_id, payload)`.
+pub fn player_info_packet_from_current(
+    payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<(i32, Vec<u8>)> {
+    let packet_id = if version >= JavaMinecraftVersion::V_1_19_3 {
+        ids::clientbound::play::PLAYER_INFO_UPDATE.to_id(version)
+    } else {
+        ids::clientbound::play::PLAYER_INFO.to_id(version)
+    };
+    if packet_id == -1 {
+        return None;
+    }
+    Some((
+        packet_id,
+        player_info_update_from_current(payload, version)?,
+    ))
+}
+
+/// Outgoing `PLAYER_INFO_REMOVE` mapped to `(client_id, payload)`.
+pub fn player_info_remove_packet_from_current(
+    payload: &[u8],
+    version: JavaMinecraftVersion,
+) -> Option<(i32, Vec<u8>)> {
+    match PlayerInfoFormat::of(version) {
+        PlayerInfoFormat::V1_19_3 => {
+            let id = ids::clientbound::play::PLAYER_INFO_REMOVE.to_id(version);
+            (id != -1).then(|| (id, payload.to_vec()))
+        }
+        PlayerInfoFormat::V1_8 => {
+            let id = ids::clientbound::play::PLAYER_INFO.to_id(version);
+            if id == -1 {
+                return None;
+            }
+            let mut out = Vec::with_capacity(1 + payload.len());
+            out.write_var_int(&VarInt(4)).ok()?;
+            out.extend_from_slice(payload);
+            Some((id, out))
+        }
+        PlayerInfoFormat::V1_7 => None,
+    }
+}
+
+fn truncate_chars(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
+}
+
+fn encode_player_info_v1_8(
+    flags: PlayerInfoFlags,
+    entries: &[Entry],
+    version: JavaMinecraftVersion,
+) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    if flags.contains(PlayerInfoFlags::ADD_PLAYER) {
+        out.write_var_int(&VarInt(0)).ok()?;
+        out.write_var_int(&VarInt(entries.len() as i32)).ok()?;
+        for entry in entries {
+            let (name, properties) = entry.add.as_ref()?;
+            out.write_uuid(&entry.uuid).ok()?;
+            out.write_string(truncate_chars(name, 16)).ok()?;
+            out.write_list(properties, |w, prop| {
+                w.write_string(&prop.name)?;
+                w.write_string(&prop.value)?;
+                w.write_option(&prop.signature, |w, sig| w.write_string(sig))
+            })
+            .ok()?;
+            out.write_var_int(&VarInt(entry.game_mode.unwrap_or(0)))
+                .ok()?;
+            out.write_var_int(&VarInt(entry.latency.unwrap_or(0)))
+                .ok()?;
+            let dn = entry.display_name.as_ref().and_then(Option::as_ref);
+            out.write_option(&dn, |w, comp| w.write_component_legacy(comp, &version))
+                .ok()?;
+            if version >= JavaMinecraftVersion::V_1_19 {
+                out.write_bool(false).ok()?;
+            }
+        }
+        Some(out)
+    } else if flags.contains(PlayerInfoFlags::UPDATE_GAME_MODE) {
+        out.write_var_int(&VarInt(1)).ok()?;
+        out.write_var_int(&VarInt(entries.len() as i32)).ok()?;
+        for entry in entries {
+            out.write_uuid(&entry.uuid).ok()?;
+            out.write_var_int(&VarInt(entry.game_mode.unwrap_or(0)))
+                .ok()?;
+        }
+        Some(out)
+    } else if flags.contains(PlayerInfoFlags::UPDATE_LATENCY) {
+        out.write_var_int(&VarInt(2)).ok()?;
+        out.write_var_int(&VarInt(entries.len() as i32)).ok()?;
+        for entry in entries {
+            out.write_uuid(&entry.uuid).ok()?;
+            out.write_var_int(&VarInt(entry.latency.unwrap_or(0)))
+                .ok()?;
+        }
+        Some(out)
+    } else if flags.contains(PlayerInfoFlags::UPDATE_DISPLAY_NAME) {
+        out.write_var_int(&VarInt(3)).ok()?;
+        out.write_var_int(&VarInt(entries.len() as i32)).ok()?;
+        for entry in entries {
+            out.write_uuid(&entry.uuid).ok()?;
+            let dn = entry.display_name.as_ref().and_then(Option::as_ref);
+            out.write_option(&dn, |w, comp| w.write_component_legacy(comp, &version))
+                .ok()?;
+        }
+        Some(out)
+    } else {
+        None
+    }
+}
+
+fn encode_player_info_v1_7(flags: PlayerInfoFlags, entries: &[Entry]) -> Option<Vec<u8>> {
+    if !flags.contains(PlayerInfoFlags::ADD_PLAYER) {
+        return None;
+    }
+    let first = entries.first()?;
+    let (name, _) = first.add.as_ref()?;
+    let mut out = Vec::new();
+    out.write_string(truncate_chars(name, 16)).ok()?;
+    out.write_bool(true).ok()?;
+    let ping = first
+        .latency
+        .unwrap_or(0)
+        .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+    out.write_i16_be(ping).ok()?;
+    Some(out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::legacy::LegacyWrite;
     use pumpkin_data::packet::CURRENT_MC_VERSION;
-    use pumpkin_protocol::java::legacy::LegacyWrite;
 
     fn packet(version: JavaMinecraftVersion) -> Vec<u8> {
         let properties = [Property {

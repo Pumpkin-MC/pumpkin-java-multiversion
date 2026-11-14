@@ -1,7 +1,7 @@
 //! Payload translation between 26.3 and older clients, one file per encoding step.
 
+use crate::legacy::LegacyWrite;
 use pumpkin_protocol::ServerPacket;
-use pumpkin_protocol::java::legacy::LegacyWrite;
 use pumpkin_util::version::JavaMinecraftVersion;
 
 /// A component's encoding eras. Each variant starts at its version and lasts until the next
@@ -41,6 +41,7 @@ pub mod animation;
 pub mod attribute;
 pub mod biome;
 pub mod block;
+pub mod chat;
 pub mod chunk;
 pub mod commands;
 pub mod entity;
@@ -102,7 +103,10 @@ mod tests {
     #[test]
     fn eras_cover_ranges() {
         assert_eq!(ChunkFormat::of(V::V_1_7_2), ChunkFormat::V1_7);
-        assert_eq!(ChunkFormat::of(V::V_1_17_1), ChunkFormat::V1_7);
+        assert_eq!(ChunkFormat::of(V::V_1_8), ChunkFormat::V1_8);
+        assert_eq!(ChunkFormat::of(V::V_1_16_4), ChunkFormat::V1_9);
+        assert_eq!(ChunkFormat::of(V::V_1_17), ChunkFormat::V1_9);
+        assert_eq!(ChunkFormat::of(V::V_1_17_1), ChunkFormat::V1_9);
         assert_eq!(ChunkFormat::of(V::V_1_18), ChunkFormat::V1_18);
         assert_eq!(ChunkFormat::of(V::V_1_21_4), ChunkFormat::V1_18);
         assert_eq!(ChunkFormat::of(V::V_1_21_11), ChunkFormat::V1_21_6);

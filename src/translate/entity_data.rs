@@ -104,15 +104,33 @@ pub fn track_spawn(entity_id: i32, entity_type: u16) {
 /// REMOVE_ENTITIES: forgets the removed entity types.
 pub fn remove_entities_from_current(
     payload: &[u8],
-    _version: JavaMinecraftVersion,
+    version: JavaMinecraftVersion,
 ) -> Option<Vec<u8>> {
     let mut read = payload;
     let ids = read.get_list(|read| read.get_var_int()).ok()?;
     let mut types = ENTITY_TYPES.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(viewed) = types.get_mut(&VIEWER.get()) {
-        for VarInt(id) in ids {
+        for &VarInt(id) in &ids {
             viewed.remove(&id);
         }
+    }
+    if version <= JavaMinecraftVersion::V_1_7_6 {
+        if ids.is_empty() {
+            return None;
+        }
+        let count = ids.len().min(u8::MAX as usize);
+        let mut out = Vec::with_capacity(1 + count * 4);
+        out.write_u8(count as u8).ok()?;
+        for VarInt(id) in ids.into_iter().take(count) {
+            out.write_i32_be(id).ok()?;
+        }
+        return Some(out);
+    }
+    if version == JavaMinecraftVersion::V_1_17 {
+        let first = ids.first()?;
+        let mut out = Vec::new();
+        out.write_var_int(first).ok()?;
+        return Some(out);
     }
     Some(payload.to_vec())
 }

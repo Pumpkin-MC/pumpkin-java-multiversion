@@ -1,6 +1,6 @@
 //! UPDATE_ADVANCEMENTS.
 
-use pumpkin_protocol::java::legacy::LegacyWriteExt;
+use crate::legacy::LegacyWriteExt;
 use pumpkin_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer,
     ser::{NetworkReadExt, NetworkReadSliceExt, NetworkWriteExt},

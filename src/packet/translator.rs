@@ -1,16 +1,16 @@
 use pumpkin_data::packet::CURRENT_MC_VERSION;
-use pumpkin_plugin_api::events_wit::ConnectionState;
+use pumpkin_plugin_api::events_wit::JavaConnectionState;
 use pumpkin_protocol::java::client::login::CEncryptionRequest;
 use pumpkin_util::version::JavaMinecraftVersion;
 
+use crate::legacy::ids;
 use crate::remap;
 use crate::translate::{
-    advancement, animation, attribute, block, chunk, commands, entity, entity_data, explosion,
-    game_event, inventory, light, login, movement, particle, player_info, player_spawn,
+    advancement, animation, attribute, block, chat, chunk, commands, entity, entity_data,
+    explosion, game_event, inventory, light, login, movement, particle, player_info, player_spawn,
     plugin_message, recipe, reencode_current, registry, resource_pack, serverbound, sound, tags,
     team, time,
 };
-use pumpkin_protocol::java::legacy::ids;
 
 type PayloadTranslator = fn(&[u8], JavaMinecraftVersion) -> Option<Vec<u8>>;
 type IdAndPayloadTranslator = fn(&[u8], JavaMinecraftVersion) -> Option<(i32, Vec<u8>)>;
@@ -142,20 +142,20 @@ pub const fn to_wasm_java_version(
 }
 
 /// The core connection state of the plugin's `state`.
-const fn protocol_state(state: ConnectionState) -> pumpkin_protocol::ConnectionState {
+const fn protocol_state(state: JavaConnectionState) -> pumpkin_protocol::ConnectionState {
     use pumpkin_protocol::ConnectionState as P;
     match state {
-        ConnectionState::Handshake => P::HandShake,
-        ConnectionState::Status => P::Status,
-        ConnectionState::Login | ConnectionState::Transfer => P::Login,
-        ConnectionState::Config => P::Config,
-        ConnectionState::Play => P::Play,
+        JavaConnectionState::Handshake => P::HandShake,
+        JavaConnectionState::Status => P::Status,
+        JavaConnectionState::Login => P::Login,
+        JavaConnectionState::Config => P::Config,
+        JavaConnectionState::Play => P::Play,
     }
 }
 
 /// Current id of the client's `client_id` in `state`. Ids are only unique within a state.
 fn serverbound_id(
-    state: ConnectionState,
+    state: JavaConnectionState,
     client_id: i32,
     version: JavaMinecraftVersion,
 ) -> Option<i32> {
@@ -164,7 +164,7 @@ fn serverbound_id(
 
 /// Client id of the current `current_id` in `state`. `None` when the client has no such packet.
 fn clientbound_id(
-    state: ConnectionState,
+    state: JavaConnectionState,
     current_id: i32,
     version: JavaMinecraftVersion,
 ) -> Option<i32> {
@@ -183,7 +183,7 @@ impl PacketTranslator {
         if version == CURRENT_MC_VERSION {
             return Some(packet_id);
         }
-        serverbound_id(ConnectionState::Play, packet_id, version)
+        serverbound_id(JavaConnectionState::Play, packet_id, version)
     }
 
     /// Translates an outgoing current play packet ID into the client's version.
@@ -195,7 +195,7 @@ impl PacketTranslator {
         if version == CURRENT_MC_VERSION {
             return Some(current_id);
         }
-        clientbound_id(ConnectionState::Play, current_id, version)
+        clientbound_id(JavaConnectionState::Play, current_id, version)
     }
 
     /// Translates a sound ID from 26.3 to the client's version.
@@ -280,6 +280,12 @@ impl PacketTranslator {
         if new_id == ids::serverbound::play::PLAYER_COMMAND.current() {
             return serverbound::player_command_to_current(raw_payload, version);
         }
+        if new_id == ids::serverbound::play::CLIENT_COMMAND.current() {
+            return serverbound::client_command_to_current(raw_payload, version);
+        }
+        if new_id == ids::serverbound::play::USE_ITEM_ON.current() {
+            return serverbound::use_item_on_to_current(raw_payload, version, rotation);
+        }
         // Dropped when unreadable: kept as is, the client's item ids would be stored
         if new_id == ids::serverbound::play::SET_CREATIVE_MODE_SLOT.current() {
             return inventory::creative_slot_to_current(raw_payload, version)
@@ -299,7 +305,7 @@ impl PacketTranslator {
     /// unique within a state, so the lookup is limited to `state`'s table.
     #[must_use]
     pub fn translate_connection_incoming(
-        state: ConnectionState,
+        state: JavaConnectionState,
         packet_id: i32,
         raw_payload: &[u8],
         version: JavaMinecraftVersion,
@@ -310,22 +316,18 @@ impl PacketTranslator {
         let new_id = serverbound_id(state, packet_id, version)?;
 
         let translated_payload = match state {
-            ConnectionState::Login | ConnectionState::Transfer
-                if new_id == ids::serverbound::login::HELLO.current() =>
-            {
+            JavaConnectionState::Login if new_id == ids::serverbound::login::HELLO.current() => {
                 login::hello_to_current(raw_payload, version)
             }
-            ConnectionState::Login | ConnectionState::Transfer
-                if new_id == ids::serverbound::login::KEY.current() =>
-            {
+            JavaConnectionState::Login if new_id == ids::serverbound::login::KEY.current() => {
                 login::key_to_current(raw_payload, version)
             }
-            ConnectionState::Config
+            JavaConnectionState::Config
                 if new_id == ids::serverbound::config::RESOURCE_PACK.current() =>
             {
                 resource_pack::response_to_current(raw_payload, version)
             }
-            ConnectionState::Config
+            JavaConnectionState::Config
                 if new_id == ids::serverbound::config::CUSTOM_PAYLOAD.current() =>
             {
                 plugin_message::to_current(raw_payload, version)
@@ -339,33 +341,38 @@ impl PacketTranslator {
     }
 
     fn connection_outgoing_payload(
-        state: ConnectionState,
+        state: JavaConnectionState,
         current_id: i32,
         raw_payload: &[u8],
         version: JavaMinecraftVersion,
     ) -> Option<Vec<u8>> {
         match state {
-            ConnectionState::Login | ConnectionState::Transfer
+            JavaConnectionState::Login
                 if current_id == ids::clientbound::login::HELLO.current() =>
             {
                 reencode_current::<CEncryptionRequest>(raw_payload, version)
             }
-            ConnectionState::Login | ConnectionState::Transfer
+            JavaConnectionState::Login
                 if current_id == ids::clientbound::login::LOGIN_FINISHED.current() =>
             {
                 login::login_success_from_current(raw_payload, version)
             }
-            ConnectionState::Config
+            JavaConnectionState::Config
+                if current_id == ids::clientbound::config::DISCONNECT.current() =>
+            {
+                chat::component_from_current(raw_payload, version)
+            }
+            JavaConnectionState::Config
                 if current_id == ids::clientbound::config::RESOURCE_PACK_PUSH.current() =>
             {
                 resource_pack::push_from_current(raw_payload, version)
             }
-            ConnectionState::Config
+            JavaConnectionState::Config
                 if current_id == ids::clientbound::config::UPDATE_TAGS.current() =>
             {
                 tags::update_tags_from_current(raw_payload, version)
             }
-            ConnectionState::Config
+            JavaConnectionState::Config
                 if current_id == ids::clientbound::config::CUSTOM_PAYLOAD.current() =>
             {
                 plugin_message::from_current(raw_payload, version)
@@ -378,7 +385,7 @@ impl PacketTranslator {
     /// `None` when the packet does not exist for the client and must be dropped.
     #[must_use]
     pub fn translate_connection_outgoing_id(
-        state: ConnectionState,
+        state: JavaConnectionState,
         current_id: i32,
         version: JavaMinecraftVersion,
     ) -> Option<i32> {
@@ -392,7 +399,7 @@ impl PacketTranslator {
     /// `None` when the packet does not exist for the client and must be dropped.
     #[must_use]
     pub fn translate_connection_outgoing(
-        state: ConnectionState,
+        state: JavaConnectionState,
         current_id: i32,
         raw_payload: &[u8],
         version: JavaMinecraftVersion,
@@ -406,7 +413,7 @@ impl PacketTranslator {
         {
             return None;
         }
-        if matches!(state, ConnectionState::Config)
+        if matches!(state, JavaConnectionState::Config)
             && current_id == ids::clientbound::config::REGISTRY_DATA.current()
         {
             let payload = registry::registry_data_from_current(raw_payload, version)?;
@@ -451,6 +458,19 @@ impl PacketTranslator {
                 movement::position_sync_from_current
             }
             id if id == play::SWING_ANIMATION.current() => animation::swing_from_current,
+            id if id == play::PLAYER_INFO_UPDATE.current() => {
+                player_info::player_info_packet_from_current
+            }
+            id if id == play::PLAYER_INFO_REMOVE.current() => {
+                player_info::player_info_remove_packet_from_current
+            }
+            id if id == play::SYSTEM_CHAT.current() => chat::system_chat_from_current,
+            id if id == play::SET_CURSOR_ITEM.current() => {
+                inventory::set_cursor_item_packet_from_current
+            }
+            id if id == play::SET_PLAYER_INVENTORY.current() => {
+                inventory::set_player_inventory_packet_from_current
+            }
             _ => return None,
         })
     }
@@ -471,13 +491,41 @@ impl PacketTranslator {
             }
             id if id == play::LEVEL_CHUNK_WITH_LIGHT.current() => chunk::chunk_from_current,
             id if id == play::LIGHT_UPDATE.current() => light::light_update_from_current,
+            id if id == play::FORGET_LEVEL_CHUNK.current() => chat::forget_level_chunk_from_current,
             id if id == play::SET_PLAYER_TEAM.current() => team::set_player_team_from_current,
-            id if id == play::PLAYER_INFO_UPDATE.current() => {
-                player_info::player_info_update_from_current
+            id if id == play::CUSTOM_PAYLOAD.current() => plugin_message::play_from_current,
+            id if id == play::DISCONNECT.current()
+                || id == play::SET_ACTION_BAR_TEXT.current()
+                || id == play::SET_TITLE_TEXT.current()
+                || id == play::SET_SUBTITLE_TEXT.current() =>
+            {
+                chat::component_from_current
             }
+            id if id == play::TAB_LIST.current() => chat::tab_list_from_current,
+            id if id == play::SERVER_DATA.current() => chat::server_data_from_current,
+            id if id == play::CHANGE_DIFFICULTY.current() => chat::change_difficulty_from_current,
+            id if id == play::KEEP_ALIVE.current() => chat::keep_alive_from_current,
+            id if id == play::SET_HELD_SLOT.current() => chat::set_held_slot_from_current,
+            id if id == play::SET_HEALTH.current() => chat::set_health_from_current,
+            id if id == play::SET_EXPERIENCE.current() => chat::set_experience_from_current,
+            id if id == play::ROTATE_HEAD.current() => chat::rotate_head_from_current,
+            id if id == play::TAKE_ITEM_ENTITY.current() => chat::take_item_entity_from_current,
+            id if id == play::SET_ENTITY_LINK.current() => chat::set_entity_link_from_current,
+            id if id == play::SET_DISPLAY_OBJECTIVE.current() => {
+                chat::display_objective_from_current
+            }
+            id if id == play::SET_OBJECTIVE.current() => chat::set_objective_from_current,
+            id if id == play::SET_SCORE.current() => chat::set_score_from_current,
+            id if id == play::OPEN_SIGN_EDITOR.current() => chat::open_sign_editor_from_current,
+            id if id == play::UPDATE_MOB_EFFECT.current() => chat::update_mob_effect_from_current,
+            id if id == play::REMOVE_MOB_EFFECT.current() => chat::remove_mob_effect_from_current,
+            id if id == play::BLOCK_EVENT.current() => chat::block_event_from_current,
+            id if id == play::BLOCK_DESTRUCTION.current() => chat::block_destruction_from_current,
+            id if id == play::LEVEL_EVENT.current() => chat::level_event_from_current,
             id if id == play::MOVE_ENTITY_POS.current() => movement::pos_from_current,
             id if id == play::MOVE_ENTITY_POS_ROT.current() => movement::pos_rot_from_current,
             id if id == play::MOVE_ENTITY_ROT.current() => movement::rot_from_current,
+            id if id == play::TELEPORT_ENTITY.current() => movement::teleport_entity_from_current,
             id if id == play::SET_ENTITY_MOTION.current() => movement::entity_motion_from_current,
             id if id == play::PLAYER_ROTATION.current() => movement::player_rotation_from_current,
             id if id == play::PLAYER_POSITION.current() => movement::player_position_from_current,
@@ -505,10 +553,6 @@ impl PacketTranslator {
             }
             id if id == play::CONTAINER_SET_SLOT.current() => {
                 inventory::container_set_slot_from_current
-            }
-            id if id == play::SET_CURSOR_ITEM.current() => inventory::set_cursor_item_from_current,
-            id if id == play::SET_PLAYER_INVENTORY.current() => {
-                inventory::set_player_inventory_from_current
             }
             id if id == play::SET_EQUIPMENT.current() => inventory::set_equipment_from_current,
             id if id == play::SOUND.current() => sound::sound_from_current,
@@ -552,7 +596,7 @@ mod tests {
         let v1_20 = JavaMinecraftVersion::V_1_20;
         assert_eq!(
             PacketTranslator::translate_connection_outgoing_id(
-                ConnectionState::Login,
+                JavaConnectionState::Login,
                 clientbound::login::LOGIN_FINISHED.current(),
                 v1_20
             ),

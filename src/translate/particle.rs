@@ -1,9 +1,9 @@
 //! Particles: id and options, LEVEL_PARTICLES.
 
 use pumpkin_data::particle::Particle;
+use pumpkin_protocol::codec::particle::ParticleOptionsLayout;
 use pumpkin_protocol::{
     VarInt,
-    codec::particle::ParticleOptionsLayout,
     java::client::play::CParticle,
     ser::{NetworkReadExt, NetworkWriteExt},
 };
@@ -196,8 +196,8 @@ pub fn level_particles_from_current(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::legacy::LegacyWrite;
     use pumpkin_protocol::ClientPacket;
-    use pumpkin_protocol::java::legacy::LegacyWrite;
 
     #[test]
     fn dust_color_becomes_floats_before_1_21_2() {
