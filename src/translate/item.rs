@@ -18,7 +18,7 @@ use crate::remap::{
 };
 
 /// Client component id, `None` when the component does not exist for the client.
-fn component_id_for_version(id: u8, version: JavaMinecraftVersion) -> Option<i32> {
+pub(crate) fn component_id_for_version(id: u8, version: JavaMinecraftVersion) -> Option<i32> {
     let mapped = remap_data_component_type_id_for_version(u32::from(id), version);
     (mapped != 0 || id == 0).then_some(mapped as i32)
 }

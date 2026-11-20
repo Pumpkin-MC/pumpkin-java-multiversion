@@ -3,6 +3,7 @@
 
 use std::fmt::Write as _;
 
+use crate::translate::item::component_id_for_version;
 use pumpkin_nbt::{compound::NbtCompound, serializer::NbtWriteHelperJava, tag::NbtTag};
 use pumpkin_util::{
     text::{TextComponent, TextComponentBase, color::Color},
@@ -72,6 +73,7 @@ fn downgrade_compound(tag: &mut NbtCompound, version: JavaMinecraftVersion) {
                     downgrade(child, version);
                 }
             }
+            remap_hover(hover, version);
         }
     }
 
@@ -112,6 +114,86 @@ fn downgrade_compound(tag: &mut NbtCompound, version: JavaMinecraftVersion) {
     {
         click.put_string("action", "suggest_command".to_string());
     }
+}
+
+/// A hover naming an item, entity or component the client lacks makes it drop the whole packet.
+fn remap_hover(hover: &mut NbtCompound, version: JavaMinecraftVersion) {
+    match hover.get_string("action") {
+        Some("show_item") => remap_hover_item(hover, version),
+        Some("show_entity") => {
+            if let Some(name) = hover
+                .get_string("id")
+                .and_then(|id| client_entity(id, version))
+            {
+                hover.put_string("id", name);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn remap_hover_item(hover: &mut NbtCompound, version: JavaMinecraftVersion) {
+    use crate::remap::item_id_remap::{remap_item_id_for_version, remap_item_id_from_version};
+    use pumpkin_data::{data_component::DataComponent, item::Item};
+
+    if let Some(item) = hover
+        .get_string("id")
+        .and_then(|id| Item::from_registry_key(id.strip_prefix("minecraft:").unwrap_or(id)))
+    {
+        // Back and forth through the tables: the client's id stands for a 26.3 item, maybe another one
+        let client_id = remap_item_id_for_version(item.id, version);
+        if let Some(native) = Item::from_id(remap_item_id_from_version(client_id, version))
+            && native.id != item.id
+        {
+            hover.put_string("id", format!("minecraft:{}", native.registry_key));
+        }
+    }
+    // shortcut: kept components keep their 26.3 payload, like in `translate::item`
+    if let Some(NbtTag::Compound(components)) = hover.child_tags.get_mut("components") {
+        components.child_tags.retain(|key, _| {
+            let name = key.strip_prefix('!').unwrap_or(key);
+            // A key without a namespace means `minecraft:`, which is the form some names need
+            let name = if name.contains(':') {
+                name.to_string()
+            } else {
+                format!("minecraft:{name}")
+            };
+            DataComponent::try_from_name(&name)
+                .is_none_or(|id| component_id_for_version(id.to_id(), version).is_some())
+        });
+        for (key, child) in &mut components.child_tags {
+            if matches!(
+                key.strip_prefix("minecraft:").unwrap_or(key),
+                "custom_name" | "item_name" | "lore"
+            ) {
+                downgrade(child, version);
+            }
+        }
+    }
+}
+
+// shortcut: names come from the 26.3 registry, so a version that renamed an entity (boats in
+// 1.21.2) keeps the 26.3 name, and a fallback chain I can't resolve leaves the entity as is
+fn client_entity(id: &str, version: JavaMinecraftVersion) -> Option<String> {
+    use crate::remap::entity_id_remap::remap_entity_id_for_version as remap;
+    use pumpkin_data::entity::EntityType;
+
+    let entity = EntityType::from_name(id)?;
+    let target = remap(entity.id, version);
+    let sharing: Vec<u16> = (0..)
+        .map_while(|i| EntityType::from_raw(i).map(|e| e.id))
+        .filter(|&i| remap(i, version) == target)
+        .collect();
+    if sharing.len() < 2 {
+        return None;
+    }
+    // Among entities sharing a client id, the native one follows the registry order: the previous
+    // entity maps right before it, which a fallback doesn't
+    let native = sharing
+        .iter()
+        .find(|&&i| i == 0 || remap(i - 1, version) + 1 == target)?;
+    let native = EntityType::from_raw(*native)?;
+    (native.id != entity.id).then(|| format!("minecraft:{}", native.resource_name))
 }
 
 /// Keeps the text vanilla shows when the object can't be drawn.
@@ -295,6 +377,127 @@ mod tests {
 
     fn json(component: &TextComponent, version: JavaMinecraftVersion) -> serde_json::Value {
         serde_json::from_str(&to_json(component, &version)).unwrap()
+    }
+
+    fn hover_item(id: &str, version: JavaMinecraftVersion) -> String {
+        let mut hover = NbtCompound::new();
+        hover.put_string("action", "show_item".to_string());
+        hover.put_string("id", id.to_string());
+        remap_hover(&mut hover, version);
+        hover.get_string("id").unwrap().to_string()
+    }
+
+    #[test]
+    fn show_item_names_an_item_the_client_has() {
+        for version in [
+            JavaMinecraftVersion::V_1_21_4,
+            JavaMinecraftVersion::V_26_1,
+            JavaMinecraftVersion::V_26_2,
+        ] {
+            assert_eq!(hover_item("minecraft:stone", version), "minecraft:stone");
+        }
+        let id = hover_item("minecraft:poplar_planks", JavaMinecraftVersion::V_26_2);
+        assert_ne!(id, "minecraft:poplar_planks");
+        assert_eq!(
+            hover_item("minecraft:poplar_planks", JavaMinecraftVersion::V_26_3),
+            "minecraft:poplar_planks"
+        );
+    }
+
+    #[test]
+    fn show_entity_names_an_entity_the_client_has() {
+        use crate::remap::entity_id_remap::remap_entity_id_for_version as remap;
+        use pumpkin_data::entity::EntityType;
+
+        for version in [
+            JavaMinecraftVersion::V_1_8,
+            JavaMinecraftVersion::V_1_12,
+            JavaMinecraftVersion::V_1_16,
+            JavaMinecraftVersion::V_1_20_5,
+            JavaMinecraftVersion::V_1_21_4,
+            JavaMinecraftVersion::V_26_1,
+            JavaMinecraftVersion::V_26_2,
+        ] {
+            for entity in (0..).map_while(EntityType::from_raw) {
+                if let Some(name) = client_entity(entity.resource_name, version) {
+                    let shown = EntityType::from_name(&name).unwrap();
+                    assert_eq!(remap(shown.id, version), remap(entity.id, version));
+                }
+            }
+        }
+        let version = JavaMinecraftVersion::V_26_2;
+        let added = (0..)
+            .map_while(EntityType::from_raw)
+            .find(|e| remap(e.id, version) != e.id && remap(e.id, version) == remap(12, version))
+            .unwrap();
+        let name = client_entity(added.resource_name, version).unwrap();
+        assert_eq!(
+            name,
+            format!(
+                "minecraft:{}",
+                EntityType::from_raw(12).unwrap().resource_name
+            )
+        );
+    }
+
+    #[test]
+    fn show_item_drops_components_the_client_lacks() {
+        use pumpkin_data::data_component::DataComponent;
+
+        let version = JavaMinecraftVersion::V_26_2;
+        let lacking = (1..=u8::MAX)
+            .filter_map(DataComponent::try_from_id)
+            .find(|c| component_id_for_version(c.to_id(), version).is_none())
+            .unwrap();
+        let mut components = NbtCompound::new();
+        components.put_string(lacking.to_name(), String::new());
+        components.put_string("minecraft:custom_data", String::new());
+        let mut hover = NbtCompound::new();
+        hover.put_string("action", "show_item".to_string());
+        hover.put_string("id", "minecraft:stone".to_string());
+        hover.put_compound("components", components);
+        remap_hover(&mut hover, version);
+        let components = hover.get_compound("components").unwrap();
+        assert!(!components.has(lacking.to_name()));
+        assert!(components.has("minecraft:custom_data"));
+
+        // the same component without its namespace is dropped too
+        let bare = lacking
+            .to_name()
+            .trim_start_matches("minecraft:")
+            .to_string();
+        let mut components = NbtCompound::new();
+        components.put_string(&bare, String::new());
+        let mut hover = NbtCompound::new();
+        hover.put_string("action", "show_item".to_string());
+        hover.put_string("id", "minecraft:stone".to_string());
+        hover.put_compound("components", components);
+        remap_hover(&mut hover, version);
+        assert!(!hover.get_compound("components").unwrap().has(&bare));
+    }
+
+    #[test]
+    fn show_item_downgrades_namespaced_component_texts() {
+        let version = JavaMinecraftVersion::V_26_2;
+        let mut inner = NbtCompound::new();
+        inner.put_string("action", "show_item".to_string());
+        inner.put_string("id", "minecraft:poplar_planks".to_string());
+        let mut name = NbtCompound::new();
+        name.put_string("text", "x".to_string());
+        name.put_compound("hover_event", inner);
+        let mut components = NbtCompound::new();
+        components.put_compound("minecraft:custom_name", name);
+        let mut hover = NbtCompound::new();
+        hover.put_string("action", "show_item".to_string());
+        hover.put_string("id", "minecraft:stone".to_string());
+        hover.put_compound("components", components);
+        remap_hover(&mut hover, version);
+        let name = hover
+            .get_compound("components")
+            .and_then(|c| c.get_compound("minecraft:custom_name"))
+            .and_then(|n| n.get_compound("hover_event"))
+            .unwrap();
+        assert_ne!(name.get_string("id"), Some("minecraft:poplar_planks"));
     }
 
     #[test]
