@@ -116,19 +116,10 @@ fn downgrade_compound(tag: &mut NbtCompound, version: JavaMinecraftVersion) {
     }
 }
 
-/// A hover naming an item, entity or component the client lacks makes it drop the whole packet.
+/// A hover naming an item or component the client lacks makes it drop the whole packet.
 fn remap_hover(hover: &mut NbtCompound, version: JavaMinecraftVersion) {
-    match hover.get_string("action") {
-        Some("show_item") => remap_hover_item(hover, version),
-        Some("show_entity") => {
-            if let Some(name) = hover
-                .get_string("id")
-                .and_then(|id| client_entity(id, version))
-            {
-                hover.put_string("id", name);
-            }
-        }
-        _ => {}
+    if hover.get_string("action") == Some("show_item") {
+        remap_hover_item(hover, version);
     }
 }
 
@@ -170,30 +161,6 @@ fn remap_hover_item(hover: &mut NbtCompound, version: JavaMinecraftVersion) {
             }
         }
     }
-}
-
-// shortcut: names come from the 26.3 registry, so a version that renamed an entity (boats in
-// 1.21.2) keeps the 26.3 name, and a fallback chain I can't resolve leaves the entity as is
-fn client_entity(id: &str, version: JavaMinecraftVersion) -> Option<String> {
-    use crate::remap::entity_id_remap::remap_entity_id_for_version as remap;
-    use pumpkin_data::entity::EntityType;
-
-    let entity = EntityType::from_name(id)?;
-    let target = remap(entity.id, version);
-    let sharing: Vec<u16> = (0..)
-        .map_while(|i| EntityType::from_raw(i).map(|e| e.id))
-        .filter(|&i| remap(i, version) == target)
-        .collect();
-    if sharing.len() < 2 {
-        return None;
-    }
-    // Among entities sharing a client id, the native one follows the registry order: the previous
-    // entity maps right before it, which a fallback doesn't
-    let native = sharing
-        .iter()
-        .find(|&&i| i == 0 || remap(i - 1, version) + 1 == target)?;
-    let native = EntityType::from_raw(*native)?;
-    (native.id != entity.id).then(|| format!("minecraft:{}", native.resource_name))
 }
 
 /// Keeps the text vanilla shows when the object can't be drawn.
@@ -401,42 +368,6 @@ mod tests {
         assert_eq!(
             hover_item("minecraft:poplar_planks", JavaMinecraftVersion::V_26_3),
             "minecraft:poplar_planks"
-        );
-    }
-
-    #[test]
-    fn show_entity_names_an_entity_the_client_has() {
-        use crate::remap::entity_id_remap::remap_entity_id_for_version as remap;
-        use pumpkin_data::entity::EntityType;
-
-        for version in [
-            JavaMinecraftVersion::V_1_8,
-            JavaMinecraftVersion::V_1_12,
-            JavaMinecraftVersion::V_1_16,
-            JavaMinecraftVersion::V_1_20_5,
-            JavaMinecraftVersion::V_1_21_4,
-            JavaMinecraftVersion::V_26_1,
-            JavaMinecraftVersion::V_26_2,
-        ] {
-            for entity in (0..).map_while(EntityType::from_raw) {
-                if let Some(name) = client_entity(entity.resource_name, version) {
-                    let shown = EntityType::from_name(&name).unwrap();
-                    assert_eq!(remap(shown.id, version), remap(entity.id, version));
-                }
-            }
-        }
-        let version = JavaMinecraftVersion::V_26_2;
-        let added = (0..)
-            .map_while(EntityType::from_raw)
-            .find(|e| remap(e.id, version) != e.id && remap(e.id, version) == remap(12, version))
-            .unwrap();
-        let name = client_entity(added.resource_name, version).unwrap();
-        assert_eq!(
-            name,
-            format!(
-                "minecraft:{}",
-                EntityType::from_raw(12).unwrap().resource_name
-            )
         );
     }
 
