@@ -64,7 +64,7 @@ impl Plugin for MultiVersionPlugin {
             .collect();
         context.register_java_versions(&versions);
 
-        // Register packet event handlers with High priority to translate before/after game logic
+        // Highest for incoming, Lowest for outgoing
         context.register_event_handler(PacketReceivedHandler, EventPriority::Highest, true)?;
 
         context.register_event_handler(PacketSentHandler, EventPriority::Lowest, true)?;
