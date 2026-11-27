@@ -3,7 +3,9 @@
 
 use super::legacy_bytes;
 use crate::legacy::LegacyPacket;
+use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_protocol::{
+    PositionFlag, ServerPacket, VarInt,
     codec::lp_vector_3d::LpVector3d,
     java::client::play::{
         CEntityPositionSync, CEntityVelocity, CPlayerPosition, CPlayerRotation, CUpdateEntityPos,
@@ -119,7 +121,7 @@ pub fn player_rotation_from_current(
 
 /// PLAYER_POSITION: core's writer has every layout; before 1.21.2 the flags are a byte and
 /// the teleport id comes last.
-// TODO: the delta is dropped before 1.21.2; Via sends it as a separate entity motion
+/// The delta goes out on its own, see [`teleport_motion_from_current`].
 pub fn player_position_from_current(
     payload: &[u8],
     version: JavaMinecraftVersion,
@@ -127,12 +129,37 @@ pub fn player_position_from_current(
     super::reencode_current::<CPlayerPosition>(payload, version)
 }
 
+/// The delta of a PLAYER_POSITION as the player's SET_ENTITY_MOTION, for clients before
+/// 1.21.2 whose teleport has none. `None` when the client is left with the right velocity
+/// anyway: a teleport stops it on every axis it sets, which is what a zero delta asks for.
+/// A relative delta would need the client's own velocity and is left out.
+pub fn teleport_motion_from_current(
+    mut payload: &[u8],
+    entity_id: i32,
+    version: JavaMinecraftVersion,
+) -> Option<Vec<u8>> {
+    const POSITION: i32 = 0b0000_0111;
+    const DELTA: i32 = 0b1110_0000;
+
+    if version >= JavaMinecraftVersion::V_1_21_2 {
+        return None;
+    }
+    let teleport = CPlayerPosition::read(&mut payload, &CURRENT_MC_VERSION).ok()?;
+    let relatives = PositionFlag::get_bitfield(&teleport.relatives);
+    let stopped = teleport.delta == Vector3::new(0.0, 0.0, 0.0) && relatives & POSITION == 0;
+    if relatives & DELTA != 0 || stopped {
+        return None;
+    }
+    legacy_bytes(
+        &CEntityVelocity::new(VarInt(entity_id), teleport.delta),
+        version,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use crate::legacy::LegacyWrite;
-    use pumpkin_data::packet::CURRENT_MC_VERSION;
     use pumpkin_protocol::ClientPacket;
-    use pumpkin_protocol::VarInt;
     use pumpkin_protocol::ser::NetworkWriteExt;
 
     use super::*;
@@ -169,6 +196,63 @@ mod tests {
                 Vec::new(),
             ),
             player_position_from_current,
+        );
+    }
+
+    #[test]
+    fn teleport_delta_becomes_the_players_motion() {
+        let teleport = |delta, relatives| {
+            let packet = CPlayerPosition::new(
+                VarInt(3),
+                Vector3::new(1.5, 64.0, -2.5),
+                delta,
+                90.0,
+                10.0,
+                relatives,
+            );
+            legacy_bytes(&packet, CURRENT_MC_VERSION).unwrap()
+        };
+        let zero = Vector3::new(0.0, 0.0, 0.0);
+        let up = Vector3::new(0.0, 0.75, -0.25);
+        let old = [
+            JavaMinecraftVersion::V_1_21,
+            JavaMinecraftVersion::V_1_12_2,
+            JavaMinecraftVersion::V_1_7_6,
+        ];
+
+        for version in old {
+            assert_eq!(
+                teleport_motion_from_current(&teleport(up, Vec::new()), 42, version),
+                legacy_bytes(&CEntityVelocity::new(VarInt(42), up), version),
+                "{version:?}"
+            );
+            // stopped by the teleport itself
+            assert_eq!(
+                teleport_motion_from_current(&teleport(zero, Vec::new()), 42, version),
+                None
+            );
+            // a relative teleport keeps the velocity on that axis, so it is stopped here
+            assert_eq!(
+                teleport_motion_from_current(&teleport(zero, vec![PositionFlag::Y]), 42, version),
+                legacy_bytes(&CEntityVelocity::new(VarInt(42), zero), version),
+            );
+            assert_eq!(
+                teleport_motion_from_current(
+                    &teleport(up, vec![PositionFlag::DeltaY]),
+                    42,
+                    version
+                ),
+                None
+            );
+        }
+        // has the delta in the teleport
+        assert_eq!(
+            teleport_motion_from_current(
+                &teleport(up, Vec::new()),
+                42,
+                JavaMinecraftVersion::V_1_21_11
+            ),
+            None
         );
     }
 

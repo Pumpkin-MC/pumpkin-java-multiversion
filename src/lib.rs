@@ -26,7 +26,7 @@ use pumpkin_plugin_api::{
 
 use crate::legacy::ids;
 use crate::packet::translator::{PacketTranslator, from_wasm_java_version, to_wasm_java_version};
-use crate::translate::{chunk, entity_data, tags};
+use crate::translate::{chunk, entity_data, movement, tags};
 use pumpkin_data::packet::CURRENT_MC_VERSION;
 use pumpkin_util::version::JavaMinecraftVersion;
 
@@ -146,6 +146,10 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
             let chunk_payload = (event.packet_id
                 == ids::clientbound::play::LEVEL_CHUNK_WITH_LIGHT.current())
             .then(|| event.raw_payload.clone());
+            // Before 1.21.2 a teleport carries no velocity; it follows as an entity motion.
+            let teleport_payload = (version < JavaMinecraftVersion::V_1_21_2
+                && event.packet_id == ids::clientbound::play::PLAYER_POSITION.current())
+            .then(|| event.raw_payload.clone());
             // A current id means a different packet to the client, so drop what has none
             match entity_data::for_viewer(viewer(&event.player), || {
                 PacketTranslator::translate_outgoing_packet(
@@ -182,6 +186,20 @@ impl EventHandler<PacketSentEvent> for PacketSentHandler {
                     packet_id,
                     payload: light_payload,
                 });
+            }
+            if !event.cancelled
+                && let Some(original) = teleport_payload
+                && let Some(payload) = movement::teleport_motion_from_current(
+                    &original,
+                    event.player.as_entity().get_id() as i32,
+                    version,
+                )
+                && let Some(packet_id) = PacketTranslator::translate_clientbound_packet_id(
+                    ids::clientbound::play::SET_ENTITY_MOTION.current(),
+                    version,
+                )
+            {
+                event.extra_packets.push(RawPacket { packet_id, payload });
             }
         }
         event
